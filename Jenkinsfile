@@ -79,8 +79,8 @@ pipeline {
                         exit 1
                     fi
                     
-                    if [ ! -f "website_signup.py" ]; then
-                        echo "❌ website_signup.py not found!"
+                    if [ ! -f "website_signup_simple_fixed.py" ]; then
+                        echo "❌ website_signup_simple_fixed.py not found!"
                         exit 1
                     fi
                     
@@ -126,8 +126,8 @@ pipeline {
             steps {
                 script {
                     echo "⏳ Waiting for manual approval to proceed..."
-                    echo "📧 Check your temporary email for messages before continuing"
-                    echo "🌐 You can send test emails to the address created in Step 1"
+                    echo "📧 Email created - ready for website signup and message processing"
+                    echo "🌐 The email will be used for automatic website signup in Step 2"
                     
                     // Display email info for user reference
                     if (fileExists("${env.TEMP_EMAIL_FILE}")) {
@@ -143,9 +143,9 @@ pipeline {
                             ).trim()
                             
                             if (emailAddress && emailAddress != 'Not found') {
-                                echo "📧 ➤ Send test emails to: ${emailAddress}"
-                                echo "💌 ➤ Send your test messages now, then click OK below"
-                                echo "🌐 ➤ This email will be used for website signup in Step 4"
+                                echo "📧 ➤ Temporary email: ${emailAddress}"
+                                echo "🌐 ➤ This will be used for website signup in Step 2"
+                                echo "💌 ➤ After signup, you can send test emails to check Steps 3&4"
                             }
                         } catch (Exception e) {
                             echo "⚠️ Could not extract email address, check email_info.txt"
@@ -156,13 +156,13 @@ pipeline {
                 // 🛑 This is where the pipeline PAUSES and waits for user input
                 script {
                     def userInput = input(
-                        message: '📧 Ready to check messages and signup to website?\n\n💌 Make sure you sent test emails to the address above.\n\n🌐 The email will be used for automatic website signup.\n\nClick OK to proceed with all steps.',
+                        message: '📧 Ready to proceed with website signup and message processing?\n\n🌐 Step 2: Website signup with the temporary email\n📬 Steps 3&4: Check and process messages\n\nClick OK to continue.',
                         ok: 'OK - Proceed with all steps',
                         parameters: [
                             choice(
                                 name: 'APPROVAL_ACTION',
-                                choices: ['FULL_PROCESS', 'SKIP_SIGNUP', 'MESSAGES_ONLY'],
-                                description: 'FULL_PROCESS: All steps including signup | SKIP_SIGNUP: Steps 2&3 only | MESSAGES_ONLY: Step 2 only'
+                                choices: ['FULL_PROCESS', 'SIGNUP_ONLY', 'SKIP_SIGNUP'],
+                                description: 'FULL_PROCESS: All steps | SIGNUP_ONLY: Steps 2 only | SKIP_SIGNUP: Steps 3&4 only'
                             )
                         ]
                     )
@@ -174,20 +174,87 @@ pipeline {
                     echo "🎛️ Selected action: ${env.APPROVAL_ACTION}"
                     
                     if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                        echo "🚀 All steps will be executed including website signup"
-                    } else if (env.APPROVAL_ACTION == 'SKIP_SIGNUP') {
-                        echo "ℹ️ Website signup will be skipped"
+                        echo "🚀 All steps will be executed: signup + message processing"
+                    } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
+                        echo "🌐 Only website signup will be performed"
                     } else {
-                        echo "ℹ️ Only message checking will be performed"
+                        echo "📬 Only message processing will be performed (no signup)"
                     }
                 }
             }
         }
         
-        stage('Step 2: Check for New Messages') {
+        // 🌐 STEP 2: Website Signup (moved from step 4)
+        stage('Step 2: Website Signup') {
+            when {
+                // Run if user chose full process or signup only
+                expression {
+                    return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SIGNUP_ONLY']
+                }
+            }
+            
             steps {
                 script {
-                    echo "🔍 Step 2: Checking for new messages..."
+                    echo "🌐 Step 2: Automated website signup..."
+                    echo "✅ User approved website signup process"
+                }
+                
+                sh '''
+                    echo "🤖 Running automated website signup..."
+                    
+                    # First verify we have the email file
+                    if [ ! -f "${TEMP_EMAIL_FILE}" ]; then
+                        echo "❌ No email file found for signup"
+                        exit 1
+                    fi
+                    
+                    # Extract email address for display
+                    EMAIL_ADDR=$(grep 'EMAIL_ADDRESS=' "${TEMP_EMAIL_FILE}" | cut -d'=' -f2 || echo 'Unknown')
+                    echo "📧 Using email for signup: $EMAIL_ADDR"
+                    
+                    # Run the signup automation
+                    timeout 300s ${PYTHON_PATH} website_signup_simple_fixed.py
+                    
+                    SIGNUP_RESULT=$?
+                    
+                    if [ $SIGNUP_RESULT -eq 0 ]; then
+                        echo "✅ Website signup completed successfully"
+                        
+                        # Display signup info if file was created
+                        if [ -f "signup_info.json" ]; then
+                            echo "📋 Signup Details:"
+                            cat signup_info.json | python3 -m json.tool || cat signup_info.json
+                        fi
+                    else
+                        echo "⚠️ Website signup completed with warnings"
+                        echo "💡 Check signup logs for details"
+                    fi
+                    
+                    # Always continue the pipeline even if signup has issues
+                    exit 0
+                '''
+            }
+            
+            post {
+                success {
+                    // Archive signup files and any screenshots
+                    archiveArtifacts artifacts: "signup_*.json,signup_*.png", allowEmptyArchive: true
+                }
+            }
+        }
+        
+        // STEP 3: Check for New Messages (moved from step 2)
+        stage('Step 3: Check for New Messages') {
+            when {
+                // Run if user chose full process or skip signup
+                expression {
+                    return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
+                }
+            }
+            
+            steps {
+                script {
+                    echo "🔍 Step 3: Checking for new messages..."
                     echo "✅ Manual approval received - proceeding with message check"
                 }
                 
@@ -225,7 +292,8 @@ else:
             }
         }
         
-        stage('Step 3: Get Message Details') {
+        // STEP 4: Get Message Details (moved from step 3)
+        stage('Step 4: Get Message Details') {
             when {
                 allOf {
                     // Only run this stage if message_ids.txt exists and is not empty
@@ -242,7 +310,7 @@ else:
             
             steps {
                 script {
-                    echo "📖 Step 3: Getting detailed message information..."
+                    echo "📖 Step 4: Getting detailed message information..."
                     echo "✅ User approved proceeding with detailed message processing"
                 }
                 
@@ -308,65 +376,6 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             }
         }
         
-        // 🌐 NEW STEP 4: Website Signup
-        stage('Step 4: Website Signup') {
-            when {
-                // Only run if user chose full process
-                expression {
-                    return env.APPROVAL_ACTION == 'FULL_PROCESS'
-                }
-            }
-            
-            steps {
-                script {
-                    echo "🌐 Step 4: Automated website signup..."
-                    echo "✅ User approved website signup process"
-                }
-                
-                sh '''
-                    echo "🤖 Running automated website signup..."
-                    
-                    # First verify we have the email file
-                    if [ ! -f "${TEMP_EMAIL_FILE}" ]; then
-                        echo "❌ No email file found for signup"
-                        exit 1
-                    fi
-                    
-                    # Extract email address for display
-                    EMAIL_ADDR=$(grep 'EMAIL_ADDRESS=' "${TEMP_EMAIL_FILE}" | cut -d'=' -f2 || echo 'Unknown')
-                    echo "📧 Using email for signup: $EMAIL_ADDR"
-                    
-                    # Run the signup automation
-                    timeout 300s ${PYTHON_PATH} website_signup.py
-                    
-                    SIGNUP_RESULT=$?
-                    
-                    if [ $SIGNUP_RESULT -eq 0 ]; then
-                        echo "✅ Website signup completed successfully"
-                        
-                        # Display signup info if file was created
-                        if [ -f "signup_info.json" ]; then
-                            echo "📋 Signup Details:"
-                            cat signup_info.json | python3 -m json.tool || cat signup_info.json
-                        fi
-                    else
-                        echo "⚠️ Website signup completed with warnings"
-                        echo "💡 Check signup logs for details"
-                    fi
-                    
-                    # Always continue the pipeline even if signup has issues
-                    exit 0
-                '''
-            }
-            
-            post {
-                success {
-                    // Archive signup files and any screenshots
-                    archiveArtifacts artifacts: "signup_*.json,signup_*.png", allowEmptyArchive: true
-                }
-            }
-        }
-        
         stage('Generate Summary Report') {
             steps {
                 script {
@@ -391,28 +400,29 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Message count
-                    if [ -f "${MESSAGE_IDS_FILE}" ]; then
-                        MSG_COUNT=$(grep -c "MESSAGE_ID=" "${MESSAGE_IDS_FILE}" || echo "0")
-                        echo "📬 TOTAL MESSAGES PROCESSED: $MSG_COUNT" >> "$REPORT_FILE"
+                    # Signup information (now step 2)
+                    if [ -f "signup_info.json" ]; then
+                        echo "" >> "$REPORT_FILE"
+                        echo "🌐 WEBSITE SIGNUP INFORMATION (Step 2):" >> "$REPORT_FILE"
+                        cat signup_info.json >> "$REPORT_FILE" 2>/dev/null || echo "Could not read signup info"
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Detailed message files
+                    # Message count (now step 3)
+                    if [ -f "${MESSAGE_IDS_FILE}" ]; then
+                        MSG_COUNT=$(grep -c "MESSAGE_ID=" "${MESSAGE_IDS_FILE}" || echo "0")
+                        echo "📬 TOTAL MESSAGES PROCESSED (Step 3): $MSG_COUNT" >> "$REPORT_FILE"
+                        echo "" >> "$REPORT_FILE"
+                    fi
+                    
+                    # Detailed message files (now step 4)
                     DETAIL_COUNT=$(ls -1 message_details_*.json 2>/dev/null | wc -l)
-                    echo "📖 DETAILED MESSAGE FILES CREATED: $DETAIL_COUNT" >> "$REPORT_FILE"
+                    echo "📖 DETAILED MESSAGE FILES CREATED (Step 4): $DETAIL_COUNT" >> "$REPORT_FILE"
                     
                     if [ $DETAIL_COUNT -gt 0 ]; then
                         echo "" >> "$REPORT_FILE"
                         echo "📄 DETAILED MESSAGE FILES:" >> "$REPORT_FILE"
                         ls -la message_details_*.json >> "$REPORT_FILE" 2>/dev/null || true
-                    fi
-                    
-                    # Signup information
-                    if [ -f "signup_info.json" ]; then
-                        echo "" >> "$REPORT_FILE"
-                        echo "🌐 WEBSITE SIGNUP INFORMATION:" >> "$REPORT_FILE"
-                        cat signup_info.json >> "$REPORT_FILE" 2>/dev/null || echo "Could not read signup info"
                     fi
                     
                     # Screenshots info
@@ -459,11 +469,11 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                 echo "✅ Complete pipeline completed successfully"
                 
                 if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                    echo "🎉 All steps completed including website signup"
-                } else if (env.APPROVAL_ACTION == 'SKIP_SIGNUP') {
-                    echo "ℹ️ Message processing completed, signup was skipped"
+                    echo "🎉 All steps completed: signup + message processing"
+                } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
+                    echo "🌐 Website signup completed, message processing was skipped"
                 } else {
-                    echo "ℹ️ Only message checking was performed"
+                    echo "📬 Message processing completed, signup was skipped"
                 }
                 
                 echo "📊 Check archived artifacts for detailed results"
