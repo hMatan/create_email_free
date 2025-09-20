@@ -79,8 +79,8 @@ pipeline {
                         exit 1
                     fi
                     
-                    if [ ! -f "website_signup_simple_fixed.py" ]; then
-                        echo "❌ website_signup_simple_fixed.py not found!"
+                    if [ ! -f "website_signup.py" ]; then
+                        echo "❌ website_signup.py not found!"
                         exit 1
                     fi
                     
@@ -213,7 +213,7 @@ pipeline {
                     echo "📧 Using email for signup: $EMAIL_ADDR"
                     
                     # Run the signup automation
-                    timeout 300s ${PYTHON_PATH} website_signup_simple_fixed.py
+                    timeout 300s ${PYTHON_PATH} website_signup.py
                     
                     SIGNUP_RESULT=$?
                     
