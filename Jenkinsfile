@@ -1,9 +1,9 @@
 pipeline {
     agent any
     
-    // Schedule the pipeline to run every 10 minutes
+    // Schedule the pipeline to run every 3 days
     triggers {
-        cron('H/10 * * * *')  // Runs every 10 minutes
+        cron('H H */3 * *')  // Runs every 3 days
     }
     
     environment {
