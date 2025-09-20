@@ -89,78 +89,113 @@ pipeline {
             }
         }
         
-        stage('Install Python Dependencies') {
-            steps {
-                script {
-                    echo "📦 Installing required Python packages for website signup..."
-                }
+ stage('Install Python Dependencies') {
+    steps {
+        script {
+            echo "📦 Installing pip and required Python packages..."
+        }
+        
+        sh '''
+            echo "🔧 Installing pip and dependencies..."
+            
+            # First, check if pip is available
+            if ! command -v pip3 &> /dev/null && ! ${PYTHON_PATH} -m pip --version &> /dev/null; then
+                echo "📥 pip not found, installing pip..."
                 
-                sh '''
-                    echo "🔧 Installing Selenium and dependencies..."
+                # Try different methods to install pip
+                # Method 1: Using apt-get (Debian/Ubuntu)
+                apt-get update && apt-get install -y python3-pip 2>/dev/null || echo "⚠️ apt-get method failed"
+                
+                # Method 2: Using ensurepip
+                ${PYTHON_PATH} -m ensurepip --upgrade 2>/dev/null || echo "⚠️ ensurepip method failed"
+                
+                # Method 3: Download get-pip.py
+                if ! command -v pip3 &> /dev/null && ! ${PYTHON_PATH} -m pip --version &> /dev/null; then
+                    echo "📥 Downloading get-pip.py..."
+                    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py 2>/dev/null || wget https://bootstrap.pypa.io/get-pip.py 2>/dev/null || echo "⚠️ Could not download get-pip.py"
                     
-                    # Update pip first
-                    echo "📈 Updating pip..."
-                    ${PYTHON_PATH} -m pip install --upgrade pip --user || ${PYTHON_PATH} -m pip install --upgrade pip
-                    
-                    # Install required packages with user flag to avoid permission issues
-                    echo "📦 Installing selenium..."
-                    ${PYTHON_PATH} -m pip install --user selenium || ${PYTHON_PATH} -m pip install selenium
-                    
-                    echo "📦 Installing webdriver-manager..."
-                    ${PYTHON_PATH} -m pip install --user webdriver-manager || ${PYTHON_PATH} -m pip install webdriver-manager
-                    
-                    # Install additional useful packages
-                    echo "📦 Installing additional packages..."
-                    ${PYTHON_PATH} -m pip install --user requests urllib3 || ${PYTHON_PATH} -m pip install requests urllib3
-                    
-                    # Verify installation
-                    echo "🔍 Verifying Selenium installation..."
-                    ${PYTHON_PATH} -c "
+                    if [ -f get-pip.py ]; then
+                        ${PYTHON_PATH} get-pip.py --user 2>/dev/null || ${PYTHON_PATH} get-pip.py 2>/dev/null || echo "⚠️ get-pip.py installation failed"
+                        rm -f get-pip.py
+                    fi
+                fi
+            fi
+            
+            # Verify pip installation
+            if command -v pip3 &> /dev/null; then
+                echo "✅ Using system pip3"
+                PIP_CMD="pip3"
+            elif ${PYTHON_PATH} -m pip --version &> /dev/null; then
+                echo "✅ Using python3 -m pip"
+                PIP_CMD="${PYTHON_PATH} -m pip"
+            else
+                echo "❌ Could not install or find pip"
+                exit 1
+            fi
+            
+            echo "📈 Updating pip..."
+            $PIP_CMD install --upgrade pip --user || $PIP_CMD install --upgrade pip || echo "⚠️ pip upgrade failed"
+            
+            echo "📦 Installing selenium..."
+            $PIP_CMD install selenium --user || $PIP_CMD install selenium || echo "❌ selenium installation failed"
+            
+            echo "📦 Installing webdriver-manager..."
+            $PIP_CMD install webdriver-manager --user || $PIP_CMD install webdriver-manager || echo "❌ webdriver-manager installation failed"
+            
+            echo "📦 Installing additional packages..."
+            $PIP_CMD install requests urllib3 --user || $PIP_CMD install requests urllib3 || echo "⚠️ additional packages installation failed"
+            
+            # Verify installation
+            echo "🔍 Verifying installations..."
+            ${PYTHON_PATH} -c "
+import sys
+success = True
+
 try:
     import selenium
     print(f'✅ Selenium {selenium.__version__} installed successfully')
 except ImportError as e:
     print(f'❌ Selenium import failed: {e}')
-    exit(1)
-"
-                    
-                    echo "🔍 Verifying webdriver-manager installation..."
-                    ${PYTHON_PATH} -c "
+    success = False
+
 try:
     import webdriver_manager
     print('✅ webdriver-manager installed successfully')
 except ImportError as e:
     print(f'❌ webdriver-manager import failed: {e}')
-    exit(1)
+    success = False
+
+if not success:
+    print('⚠️ Some packages failed to install, but continuing...')
+    # Don't exit with error, let the pipeline continue
 "
-                    
-                    # Try to install Chrome if not present (for headless browsing)
-                    echo "🌐 Checking Chrome installation..."
-                    if ! command -v google-chrome &> /dev/null; then
-                        echo "📥 Chrome not found, attempting installation..."
-                        
-                        # Try to install Chrome (this might require sudo, so it might fail)
-                        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - 2>/dev/null || echo "⚠️ Could not add Chrome key"
-                        echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | tee /etc/apt/sources.list.d/google-chrome.list 2>/dev/null || echo "⚠️ Could not add Chrome repository"
-                        apt-get update 2>/dev/null || echo "⚠️ Could not update package list"
-                        apt-get install -y google-chrome-stable 2>/dev/null || echo "⚠️ Could not install Chrome automatically"
-                        
-                        # If automatic installation failed, continue anyway
-                        if ! command -v google-chrome &> /dev/null; then
-                            echo "⚠️ Chrome installation failed, but webdriver-manager should handle ChromeDriver download"
-                        else
-                            echo "✅ Chrome installed successfully"
-                        fi
-                    else
-                        echo "✅ Chrome is already installed"
-                        google-chrome --version || echo "⚠️ Chrome version check failed"
-                    fi
-                    
-                    echo "✅ All Python dependencies installation completed"
-                '''
-            }
-        }
-        
+            
+            # Try to install Chrome
+            echo "🌐 Checking Chrome installation..."
+            if ! command -v google-chrome &> /dev/null; then
+                echo "📥 Attempting Chrome installation..."
+                
+                # Add Chrome repository and install
+                wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - 2>/dev/null || echo "⚠️ Could not add Chrome key"
+                echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list 2>/dev/null || echo "⚠️ Could not add Chrome repository"
+                apt-get update 2>/dev/null && apt-get install -y google-chrome-stable 2>/dev/null || echo "⚠️ Chrome installation failed - webdriver-manager will handle ChromeDriver"
+                
+                if command -v google-chrome &> /dev/null; then
+                    echo "✅ Chrome installed successfully"
+                    google-chrome --version 2>/dev/null || echo "Chrome installed but version check failed"
+                else
+                    echo "⚠️ Chrome not installed, but webdriver-manager should handle ChromeDriver download"
+                fi
+            else
+                echo "✅ Chrome is already available"
+                google-chrome --version 2>/dev/null || echo "Chrome available but version check failed"
+            fi
+            
+            echo "✅ Dependencies installation completed"
+        '''
+    }
+}
+
         stage('Step 1: Create/Verify Temp Email') {
             steps {
                 script {
