@@ -1,9 +1,9 @@
 pipeline {
     agent any
     
-    // Schedule the pipeline to run every 200 minutes
+    // Schedule the pipeline to run every 10 minutes
     triggers {
-        cron('H/200 * * * *')  // Runs every 200 minutes
+        cron('H/10 * * * *')  // Runs every 10 minutes
     }
     
     environment {
@@ -27,8 +27,8 @@ pipeline {
         // Keep builds for 30 days or max 50 builds
         buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '50'))
         
-        // Set build timeout to 20 minutes (increased for signup step)
-        timeout(time: 20, unit: 'MINUTES')
+        // Set build timeout to 25 minutes (increased for dependency installation)
+        timeout(time: 25, unit: 'MINUTES')
         
         // Disable concurrent builds
         disableConcurrentBuilds()
@@ -88,26 +88,34 @@ pipeline {
                 '''
             }
         }
-        stage('Install Python Dependencies') {
-    steps {
-        script {
-            echo "📦 Installing required Python packages for website signup..."
-        }
         
-        sh '''
-            echo "🔧 Installing Selenium and dependencies..."
-            
-            # Install required packages with user flag to avoid permission issues
-            python3 -m pip install --user selenium webdriver-manager
-            
-            # Alternative: try without --user if the above fails
-            if [ $? -ne 0 ]; then
-                echo "🔄 Retrying installation without --user flag..."
-                python3 -m pip install selenium webdriver-manager
-            fi
-            
-            # Verify installation
-            python3 -c "
+        stage('Install Python Dependencies') {
+            steps {
+                script {
+                    echo "📦 Installing required Python packages for website signup..."
+                }
+                
+                sh '''
+                    echo "🔧 Installing Selenium and dependencies..."
+                    
+                    # Update pip first
+                    echo "📈 Updating pip..."
+                    ${PYTHON_PATH} -m pip install --upgrade pip --user || ${PYTHON_PATH} -m pip install --upgrade pip
+                    
+                    # Install required packages with user flag to avoid permission issues
+                    echo "📦 Installing selenium..."
+                    ${PYTHON_PATH} -m pip install --user selenium || ${PYTHON_PATH} -m pip install selenium
+                    
+                    echo "📦 Installing webdriver-manager..."
+                    ${PYTHON_PATH} -m pip install --user webdriver-manager || ${PYTHON_PATH} -m pip install webdriver-manager
+                    
+                    # Install additional useful packages
+                    echo "📦 Installing additional packages..."
+                    ${PYTHON_PATH} -m pip install --user requests urllib3 || ${PYTHON_PATH} -m pip install requests urllib3
+                    
+                    # Verify installation
+                    echo "🔍 Verifying Selenium installation..."
+                    ${PYTHON_PATH} -c "
 try:
     import selenium
     print(f'✅ Selenium {selenium.__version__} installed successfully')
@@ -115,8 +123,9 @@ except ImportError as e:
     print(f'❌ Selenium import failed: {e}')
     exit(1)
 "
-            
-            python3 -c "
+                    
+                    echo "🔍 Verifying webdriver-manager installation..."
+                    ${PYTHON_PATH} -c "
 try:
     import webdriver_manager
     print('✅ webdriver-manager installed successfully')
@@ -124,12 +133,34 @@ except ImportError as e:
     print(f'❌ webdriver-manager import failed: {e}')
     exit(1)
 "
-            
-            echo "✅ All Python dependencies installed successfully"
-        '''
-    }
-}
-
+                    
+                    # Try to install Chrome if not present (for headless browsing)
+                    echo "🌐 Checking Chrome installation..."
+                    if ! command -v google-chrome &> /dev/null; then
+                        echo "📥 Chrome not found, attempting installation..."
+                        
+                        # Try to install Chrome (this might require sudo, so it might fail)
+                        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - 2>/dev/null || echo "⚠️ Could not add Chrome key"
+                        echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | tee /etc/apt/sources.list.d/google-chrome.list 2>/dev/null || echo "⚠️ Could not add Chrome repository"
+                        apt-get update 2>/dev/null || echo "⚠️ Could not update package list"
+                        apt-get install -y google-chrome-stable 2>/dev/null || echo "⚠️ Could not install Chrome automatically"
+                        
+                        # If automatic installation failed, continue anyway
+                        if ! command -v google-chrome &> /dev/null; then
+                            echo "⚠️ Chrome installation failed, but webdriver-manager should handle ChromeDriver download"
+                        else
+                            echo "✅ Chrome installed successfully"
+                        fi
+                    else
+                        echo "✅ Chrome is already installed"
+                        google-chrome --version || echo "⚠️ Chrome version check failed"
+                    fi
+                    
+                    echo "✅ All Python dependencies installation completed"
+                '''
+            }
+        }
+        
         stage('Step 1: Create/Verify Temp Email') {
             steps {
                 script {
@@ -197,7 +228,7 @@ except ImportError as e:
                 // 🛑 This is where the pipeline PAUSES and waits for user input
                 script {
                     def userInput = input(
-                        message: '📧 Ready to proceed with website signup and message processing?\n\n🌐 Step 2: Website signup with the temporary email\n📬 Steps 3&4: Check and process messages\n\nClick OK to continue.',
+                        message: '📧 Ready to proceed with website signup and message processing?\\n\\n🌐 Step 2: Website signup with the temporary email\\n📬 Steps 3&4: Check and process messages\\n\\nClick OK to continue.',
                         ok: 'OK - Proceed with all steps',
                         parameters: [
                             choice(
@@ -225,7 +256,7 @@ except ImportError as e:
             }
         }
         
-        // 🌐 STEP 2: Website Signup (moved from step 4)
+        // 🌐 STEP 2: Website Signup (with enhanced dependency check)
         stage('Step 2: Website Signup') {
             when {
                 // Run if user chose full process or signup only
@@ -243,6 +274,25 @@ except ImportError as e:
                 sh '''
                     echo "🤖 Running automated website signup..."
                     
+                    # Verify dependencies before running
+                    echo "🔍 Final dependency check..."
+                    ${PYTHON_PATH} -c "
+import sys
+try:
+    import selenium
+    print(f'✅ Selenium {selenium.__version__} ready')
+except ImportError:
+    print('❌ Selenium not available')
+    sys.exit(1)
+
+try:
+    import webdriver_manager
+    print('✅ webdriver-manager ready')
+except ImportError:
+    print('❌ webdriver-manager not available')
+    sys.exit(1)
+"
+                    
                     # First verify we have the email file
                     if [ ! -f "${TEMP_EMAIL_FILE}" ]; then
                         echo "❌ No email file found for signup"
@@ -253,8 +303,9 @@ except ImportError as e:
                     EMAIL_ADDR=$(grep 'EMAIL_ADDRESS=' "${TEMP_EMAIL_FILE}" | cut -d'=' -f2 || echo 'Unknown')
                     echo "📧 Using email for signup: $EMAIL_ADDR"
                     
-                    # Run the signup automation
-                    timeout 300s ${PYTHON_PATH} website_signup.py
+                    # Run the signup automation with extended timeout
+                    echo "🚀 Starting website signup automation..."
+                    timeout 600s ${PYTHON_PATH} website_signup.py
                     
                     SIGNUP_RESULT=$?
                     
@@ -264,12 +315,19 @@ except ImportError as e:
                         # Display signup info if file was created
                         if [ -f "signup_info.json" ]; then
                             echo "📋 Signup Details:"
-                            cat signup_info.json | python3 -m json.tool || cat signup_info.json
+                            cat signup_info.json | ${PYTHON_PATH} -m json.tool 2>/dev/null || cat signup_info.json
                         fi
+                    elif [ $SIGNUP_RESULT -eq 124 ]; then
+                        echo "⏰ Website signup timed out (10 minutes)"
+                        echo "💡 This might be normal for slow connections"
                     else
-                        echo "⚠️ Website signup completed with warnings"
+                        echo "⚠️ Website signup completed with warnings (exit code: $SIGNUP_RESULT)"
                         echo "💡 Check signup logs for details"
                     fi
+                    
+                    # List all created files for debugging
+                    echo "📁 Files created during signup:"
+                    ls -la *.png *.json 2>/dev/null || echo "No additional files created"
                     
                     # Always continue the pipeline even if signup has issues
                     exit 0
@@ -277,14 +335,14 @@ except ImportError as e:
             }
             
             post {
-                success {
+                always {
                     // Archive signup files and any screenshots
                     archiveArtifacts artifacts: "signup_*.json,signup_*.png", allowEmptyArchive: true
                 }
             }
         }
         
-        // STEP 3: Check for New Messages (moved from step 2)
+        // STEP 3: Check for New Messages
         stage('Step 3: Check for New Messages') {
             when {
                 // Run if user chose full process or skip signup
@@ -304,7 +362,6 @@ except ImportError as e:
                     # Use timeout to prevent hanging and provide non-interactive input
                     timeout 300s ${PYTHON_PATH} -c "
 from check_messages import read_email_info, get_email_messages
-
 email_id, email_address = read_email_info()
 if email_id and email_address:
     print(f'📧 Checking messages for: {email_address}')
@@ -333,7 +390,7 @@ else:
             }
         }
         
-        // STEP 4: Get Message Details (moved from step 3)
+        // STEP 4: Get Message Details
         stage('Step 4: Get Message Details') {
             when {
                 allOf {
@@ -360,35 +417,26 @@ else:
                     # Use timeout and provide automated input for the script
                     timeout 600s ${PYTHON_PATH} -c "
 from get_message_details import read_email_info, read_message_ids, get_all_messages, filter_messages_by_ids, display_message_details, save_message_details
-
 # Read necessary information
 email_id = read_email_info()
 target_message_ids = read_message_ids()
-
 if not email_id:
     print('❌ Could not read email information')
     exit(1)
-
 if not target_message_ids:
     print('📭 No stored message IDs found')
     exit(0)
-
 print(f'🚀 Processing {len(target_message_ids)} stored message IDs...')
-
 # Get all messages and filter
 all_messages = get_all_messages(email_id)
 if all_messages is None:
     print('❌ Failed to fetch messages')
     exit(1)
-
 filtered_messages = filter_messages_by_ids(all_messages, target_message_ids)
-
 if not filtered_messages:
     print('📭 No matching messages found')
     exit(0)
-
 print(f'📧 Processing {len(filtered_messages)} matching messages...')
-
 # Process each message automatically (save all to JSON)
 for i, message in enumerate(filtered_messages, 1):
     message_id = message.get('id', f'unknown_{i}')
@@ -441,7 +489,7 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Signup information (now step 2)
+                    # Signup information (step 2)
                     if [ -f "signup_info.json" ]; then
                         echo "" >> "$REPORT_FILE"
                         echo "🌐 WEBSITE SIGNUP INFORMATION (Step 2):" >> "$REPORT_FILE"
@@ -449,14 +497,14 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Message count (now step 3)
+                    # Message count (step 3)
                     if [ -f "${MESSAGE_IDS_FILE}" ]; then
                         MSG_COUNT=$(grep -c "MESSAGE_ID=" "${MESSAGE_IDS_FILE}" || echo "0")
                         echo "📬 TOTAL MESSAGES PROCESSED (Step 3): $MSG_COUNT" >> "$REPORT_FILE"
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Detailed message files (now step 4)
+                    # Detailed message files (step 4)
                     DETAIL_COUNT=$(ls -1 message_details_*.json 2>/dev/null | wc -l)
                     echo "📖 DETAILED MESSAGE FILES CREATED (Step 4): $DETAIL_COUNT" >> "$REPORT_FILE"
                     
@@ -473,6 +521,23 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                         echo "📸 SCREENSHOTS CAPTURED: $SCREENSHOT_COUNT" >> "$REPORT_FILE"
                         ls -la *.png >> "$REPORT_FILE" 2>/dev/null || true
                     fi
+                    
+                    # Dependency info
+                    echo "" >> "$REPORT_FILE"
+                    echo "🔧 PYTHON DEPENDENCIES:" >> "$REPORT_FILE"
+                    ${PYTHON_PATH} -c "
+try:
+    import selenium
+    print(f'✅ Selenium: {selenium.__version__}')
+except:
+    print('❌ Selenium: Not available')
+    
+try:
+    import webdriver_manager
+    print('✅ webdriver-manager: Available')
+except:
+    print('❌ webdriver-manager: Not available')
+" >> "$REPORT_FILE" 2>/dev/null || echo "Could not check dependencies" >> "$REPORT_FILE"
                     
                     echo "" >> "$REPORT_FILE"
                     echo "=== END COMPLETE SUMMARY ===" >> "$REPORT_FILE"
@@ -524,6 +589,16 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
         failure {
             script {
                 echo "❌ Pipeline failed"
+                
+                // Try to capture more debug info
+                sh '''
+                    echo "🔍 Debug information:"
+                    echo "Python version: $(${PYTHON_PATH} --version 2>&1 || echo 'Python not found')"
+                    echo "Pip packages:"
+                    ${PYTHON_PATH} -m pip list 2>/dev/null | grep -E "(selenium|webdriver)" || echo "No selenium packages found"
+                    echo "Current directory contents:"
+                    ls -la
+                ''' 
             }
         }
         
