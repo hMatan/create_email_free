@@ -1,41 +1,41 @@
 pipeline {
     agent any
-
+    
     // Schedule the pipeline to run every 10 minutes
     triggers {
         cron('H/10 * * * *')  // Runs every 10 minutes
     }
-
+    
     environment {
         // Define workspace paths
         PYTHON_PATH = '/usr/bin/python3'  // Adjust path as needed
         WORKSPACE_DIR = "${WORKSPACE}"
-
+        
         // Email configuration (if you want notifications)
         EMAIL_RECIPIENTS = 'your-email@example.com'  // Change this
-
+        
         // Temp email configuration
         TEMP_EMAIL_FILE = 'email_info.txt'
         MESSAGE_IDS_FILE = 'message_ids.txt'
-
+        
         // Archive paths for artifacts
         ARTIFACTS_PATTERN = '*.txt,*.json,message_details_*.json'
     }
-
+    
     options {
         // Keep builds for 30 days or max 50 builds
         buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '50'))
-
+        
         // Set build timeout to 15 minutes
         timeout(time: 15, unit: 'MINUTES')
-
+        
         // Disable concurrent builds
         disableConcurrentBuilds()
-
+        
         // Add timestamps to console output
         timestamps()
     }
-
+    
     stages {
         stage('Setup Environment') {
             steps {
@@ -45,7 +45,7 @@ pipeline {
                     echo "🔢 Build Number: ${BUILD_NUMBER}"
                     echo "📂 Workspace: ${WORKSPACE_DIR}"
                 }
-
+                
                 // Clean up old files if needed (optional)
                 sh '''
                     echo "🧹 Cleaning up old message detail files..."
@@ -53,40 +53,40 @@ pipeline {
                 '''
             }
         }
-
+        
         stage('Check Python Scripts') {
             steps {
                 script {
                     echo "📋 Checking if Python scripts exist..."
                 }
-
+                
                 sh '''
                     if [ ! -f "create_email.py" ]; then
                         echo "❌ create_email.py not found!"
                         exit 1
                     fi
-
+                    
                     if [ ! -f "check_messages.py" ]; then
                         echo "❌ check_messages.py not found!"
                         exit 1
                     fi
-
+                    
                     if [ ! -f "get_message_details.py" ]; then
                         echo "❌ get_message_details.py not found!"
                         exit 1
                     fi
-
+                    
                     echo "✅ All Python scripts found"
                 '''
             }
         }
-
+        
         stage('Step 1: Create/Verify Temp Email') {
             steps {
                 script {
                     echo "📧 Step 1: Creating or verifying temporary email..."
                 }
-
+                
                 sh '''
                     # Check if email_info.txt exists and is recent (less than 8 minutes old)
                     if [ -f "${TEMP_EMAIL_FILE}" ] && [ $(find "${TEMP_EMAIL_FILE}" -mmin -8 | wc -l) -gt 0 ]; then
@@ -95,7 +95,7 @@ pipeline {
                     else
                         echo "🆕 Creating new temporary email..."
                         ${PYTHON_PATH} create_email.py
-
+                        
                         if [ $? -eq 0 ]; then
                             echo "✅ Temporary email created successfully"
                         else
@@ -105,20 +105,77 @@ pipeline {
                     fi
                 '''
             }
-
+            
             post {
                 success {
                     archiveArtifacts artifacts: "${TEMP_EMAIL_FILE}", allowEmptyArchive: true
                 }
             }
         }
-
+        
+        // 🛑 MANUAL APPROVAL STAGE - Pipeline pauses here
+        stage('⏸️ Manual Approval') {
+            steps {
+                script {
+                    echo "⏳ Waiting for manual approval to proceed..."
+                    echo "📧 Check your temporary email for messages before continuing"
+                    echo "🌐 You can send test emails to the address created in Step 1"
+                    
+                    // Display email info for user reference
+                    if (fileExists("${env.TEMP_EMAIL_FILE}")) {
+                        def emailInfo = readFile("${env.TEMP_EMAIL_FILE}")
+                        echo "📋 Current Email Info:"
+                        echo "${emailInfo}"
+                        
+                        // Extract and display email address
+                        try {
+                            def emailAddress = sh(
+                                script: "grep 'EMAIL_ADDRESS=' ${env.TEMP_EMAIL_FILE} | cut -d'=' -f2 || echo 'Not found'",
+                                returnStdout: true
+                            ).trim()
+                            
+                            if (emailAddress && emailAddress != 'Not found') {
+                                echo "📧 ➤ Send test emails to: ${emailAddress}"
+                                echo "💌 ➤ Send your test messages now, then click OK below"
+                            }
+                        } catch (Exception e) {
+                            echo "⚠️ Could not extract email address, check email_info.txt"
+                        }
+                    }
+                }
+                
+                // 🛑 This is where the pipeline PAUSES and waits for user input
+                input {
+                    message '📧 Ready to check for messages and process details?\n\n💌 Make sure you have sent test emails to the temporary address shown above.\n\nClick OK when ready to proceed with Steps 2 & 3.'
+                    ok 'OK - Proceed with message checking'
+                    parameters {
+                        choice(
+                            name: 'APPROVAL_ACTION',
+                            choices: ['PROCEED_WITH_BOTH', 'ONLY_CHECK_MESSAGES'],
+                            description: 'PROCEED_WITH_BOTH: Run steps 2 & 3 fully | ONLY_CHECK_MESSAGES: Run step 2 only, skip detailed processing'
+                        )
+                    }
+                }
+                
+                script {
+                    echo "✅ Manual approval received!"
+                    echo "🎛️ Selected action: ${params.APPROVAL_ACTION}"
+                    if (params.APPROVAL_ACTION == 'ONLY_CHECK_MESSAGES') {
+                        echo "ℹ️ Step 3 (detailed processing) will be skipped"
+                    } else {
+                        echo "🚀 Both steps 2 & 3 will be executed"
+                    }
+                }
+            }
+        }
+        
         stage('Step 2: Check for New Messages') {
             steps {
                 script {
                     echo "🔍 Step 2: Checking for new messages..."
+                    echo "✅ Manual approval received - proceeding with message check"
                 }
-
+                
                 sh '''
                     echo "📬 Running message checker..."
                     # Use timeout to prevent hanging and provide non-interactive input
@@ -137,7 +194,7 @@ else:
     print('❌ Could not read email information')
     exit(1)
 "
-
+                    
                     if [ $? -eq 0 ]; then
                         echo "✅ Message check completed successfully"
                     else
@@ -145,28 +202,35 @@ else:
                     fi
                 '''
             }
-
+            
             post {
                 success {
                     archiveArtifacts artifacts: "${MESSAGE_IDS_FILE}", allowEmptyArchive: true
                 }
             }
         }
-
+        
         stage('Step 3: Get Message Details') {
             when {
-                // Only run this stage if message_ids.txt exists and is not empty
-                expression {
-                    return fileExists('message_ids.txt') && 
-                           sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
+                allOf {
+                    // Only run this stage if message_ids.txt exists and is not empty
+                    expression {
+                        return fileExists('message_ids.txt') && 
+                               sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
+                    }
+                    // Also check if user chose to proceed with step 3
+                    expression {
+                        return params.APPROVAL_ACTION == 'PROCEED_WITH_BOTH'
+                    }
                 }
             }
-
+            
             steps {
                 script {
                     echo "📖 Step 3: Getting detailed message information..."
+                    echo "✅ User approved proceeding with detailed message processing"
                 }
-
+                
                 sh '''
                     echo "🔍 Processing stored message IDs..."
                     # Use timeout and provide automated input for the script
@@ -206,13 +270,13 @@ for i, message in enumerate(filtered_messages, 1):
     message_id = message.get('id', f'unknown_{i}')
     print(f'\\n--- Processing Message {i}/{len(filtered_messages)} ---')
     display_message_details(message, i)
-
+    
     # Auto-save all message details
     save_message_details(message_id, message)
-
+    
 print(f'✅ Processed all {len(filtered_messages)} messages')
 "
-
+                    
                     if [ $? -eq 0 ]; then
                         echo "✅ Message details processing completed successfully"
                     else
@@ -220,7 +284,7 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     fi
                 '''
             }
-
+            
             post {
                 success {
                     // Archive all JSON files created
@@ -228,55 +292,56 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                 }
             }
         }
-
+        
         stage('Generate Summary Report') {
             steps {
                 script {
                     echo "📊 Generating pipeline summary report..."
                 }
-
+                
                 sh '''
                     # Create a summary report
                     REPORT_FILE="pipeline_summary_$(date +%Y%m%d_%H%M%S).txt"
-
+                    
                     echo "=== TEMPORARY EMAIL PIPELINE SUMMARY ===" > "$REPORT_FILE"
                     echo "Date: $(date)" >> "$REPORT_FILE"
                     echo "Build Number: ${BUILD_NUMBER}" >> "$REPORT_FILE"
                     echo "Jenkins Job: ${JOB_NAME}" >> "$REPORT_FILE"
+                    echo "Manual Approval: ${APPROVAL_ACTION}" >> "$REPORT_FILE"
                     echo "" >> "$REPORT_FILE"
-
+                    
                     # Email info
                     if [ -f "${TEMP_EMAIL_FILE}" ]; then
                         echo "📧 TEMPORARY EMAIL INFO:" >> "$REPORT_FILE"
                         cat "${TEMP_EMAIL_FILE}" >> "$REPORT_FILE"
                         echo "" >> "$REPORT_FILE"
                     fi
-
+                    
                     # Message count
                     if [ -f "${MESSAGE_IDS_FILE}" ]; then
                         MSG_COUNT=$(grep -c "MESSAGE_ID=" "${MESSAGE_IDS_FILE}" || echo "0")
                         echo "📬 TOTAL MESSAGES PROCESSED: $MSG_COUNT" >> "$REPORT_FILE"
                         echo "" >> "$REPORT_FILE"
                     fi
-
+                    
                     # Detailed message files
                     DETAIL_COUNT=$(ls -1 message_details_*.json 2>/dev/null | wc -l)
                     echo "📖 DETAILED MESSAGE FILES CREATED: $DETAIL_COUNT" >> "$REPORT_FILE"
-
+                    
                     if [ $DETAIL_COUNT -gt 0 ]; then
                         echo "" >> "$REPORT_FILE"
                         echo "📄 DETAILED MESSAGE FILES:" >> "$REPORT_FILE"
                         ls -la message_details_*.json >> "$REPORT_FILE" 2>/dev/null || true
                     fi
-
+                    
                     echo "" >> "$REPORT_FILE"
                     echo "=== END SUMMARY ===" >> "$REPORT_FILE"
-
+                    
                     echo "📄 Summary report created: $REPORT_FILE"
                     cat "$REPORT_FILE"
                 '''
             }
-
+            
             post {
                 success {
                     archiveArtifacts artifacts: "pipeline_summary_*.txt", allowEmptyArchive: true
@@ -284,12 +349,12 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             }
         }
     }
-
+    
     post {
         always {
             script {
                 echo "🏁 Pipeline completed"
-
+                
                 // Clean up workspace but keep important files
                 sh '''
                     echo "🧹 Cleaning up temporary files..."
@@ -299,58 +364,33 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                 '''
             }
         }
-
+        
         success {
             script {
                 echo "✅ Pipeline completed successfully"
+                if (params.APPROVAL_ACTION == 'ONLY_CHECK_MESSAGES') {
+                    echo "ℹ️ Step 3 (detailed processing) was skipped by user choice"
+                } else {
+                    echo "🎉 All steps completed including detailed message processing"
+                }
             }
-
-            // Uncomment to send email notifications on success
-            /*
-            emailext (
-                subject: "✅ Temp Email Pipeline Success - Build #${BUILD_NUMBER}",
-                body: '''
-                    The temporary email processing pipeline completed successfully.
-
-                    Build Number: ${BUILD_NUMBER}
-                    Date: ${new Date()}
-
-                    Check the Jenkins job for detailed logs and archived artifacts.
-                ''',
-                to: "${EMAIL_RECIPIENTS}",
-                attachmentsPattern: "${ARTIFACTS_PATTERN}"
-            )
-            */
         }
-
+        
         failure {
             script {
                 echo "❌ Pipeline failed"
             }
-
-            // Uncomment to send email notifications on failure
-            /*
-            emailext (
-                subject: "❌ Temp Email Pipeline Failed - Build #${BUILD_NUMBER}",
-                body: '''
-                    The temporary email processing pipeline failed.
-
-                    Build Number: ${BUILD_NUMBER}
-                    Date: ${new Date()}
-
-                    Please check the Jenkins job logs for error details.
-
-                    Console Output: ${BUILD_URL}console
-                ''',
-                to: "${EMAIL_RECIPIENTS}",
-                attachLog: true
-            )
-            */
         }
-
+        
         unstable {
             script {
                 echo "⚠️ Pipeline completed with warnings"
+            }
+        }
+        
+        aborted {
+            script {
+                echo "🛑 Pipeline was aborted (possibly during manual approval)"
             }
         }
     }
