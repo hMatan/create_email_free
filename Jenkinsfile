@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.11-slim'
+            args '--user root'
+        }
+    }
     
     // Schedule the pipeline to run every 10 minutes
     triggers {
@@ -8,7 +13,7 @@ pipeline {
     
     environment {
         // Define workspace paths
-        PYTHON_PATH = '/usr/bin/python3'  // Adjust path as needed
+        PYTHON_PATH = 'python3'  // Changed path for Docker
         WORKSPACE_DIR = "${WORKSPACE}"
         
         // Email configuration (if you want notifications)
@@ -27,8 +32,8 @@ pipeline {
         // Keep builds for 30 days or max 50 builds
         buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '50'))
         
-        // Set build timeout to 25 minutes (increased for dependency installation)
-        timeout(time: 25, unit: 'MINUTES')
+        // Set build timeout to 30 minutes (increased for Docker setup)
+        timeout(time: 30, unit: 'MINUTES')
         
         // Disable concurrent builds
         disableConcurrentBuilds()
@@ -41,10 +46,11 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 script {
-                    echo "🚀 Starting Complete Email & Signup Pipeline"
+                    echo "🚀 Starting Complete Email & Signup Pipeline with Docker"
                     echo "📅 Build Date: ${new Date()}"
                     echo "🔢 Build Number: ${BUILD_NUMBER}"
                     echo "📂 Workspace: ${WORKSPACE_DIR}"
+                    echo "🐳 Running in Docker container with Python pre-installed"
                 }
                 
                 // Clean up old files if needed (optional)
@@ -85,117 +91,103 @@ pipeline {
                     fi
                     
                     echo "✅ All Python scripts found"
+                    
+                    # Show Python version
+                    echo "🐍 Python version: $(python3 --version)"
+                    echo "📦 Pip version: $(pip --version)"
                 '''
             }
         }
         
- stage('Install Python Dependencies') {
-    steps {
-        script {
-            echo "📦 Installing pip and required Python packages..."
+        stage('Install System Dependencies') {
+            steps {
+                script {
+                    echo "📦 Installing system dependencies and Python packages in Docker container..."
+                }
+                
+                sh '''
+                    echo "🔧 Installing system dependencies..."
+                    
+                    # Update apt packages first
+                    apt-get update
+                    
+                    # Install system dependencies
+                    echo "📥 Installing system tools..."
+                    apt-get install -y wget gnupg unzip curl
+                    
+                    # Install Chrome
+                    echo "📥 Installing Google Chrome..."
+                    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
+                    echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list
+                    apt-get update
+                    apt-get install -y google-chrome-stable
+                    
+                    # Verify Chrome installation
+                    google-chrome --version
+                    echo "✅ Chrome installed successfully"
+                    
+                    echo "✅ System dependencies installation completed"
+                '''
+            }
         }
         
-        sh '''
-            echo "🔧 Installing pip and dependencies..."
-            
-            # First, check if pip is available
-            if ! command -v pip3 &> /dev/null && ! ${PYTHON_PATH} -m pip --version &> /dev/null; then
-                echo "📥 pip not found, installing pip..."
+        stage('Install Python Dependencies') {
+            steps {
+                script {
+                    echo "📦 Installing Python packages..."
+                }
                 
-                # Try different methods to install pip
-                # Method 1: Using apt-get (Debian/Ubuntu)
-                apt-get update && apt-get install -y python3-pip 2>/dev/null || echo "⚠️ apt-get method failed"
-                
-                # Method 2: Using ensurepip
-                ${PYTHON_PATH} -m ensurepip --upgrade 2>/dev/null || echo "⚠️ ensurepip method failed"
-                
-                # Method 3: Download get-pip.py
-                if ! command -v pip3 &> /dev/null && ! ${PYTHON_PATH} -m pip --version &> /dev/null; then
-                    echo "📥 Downloading get-pip.py..."
-                    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py 2>/dev/null || wget https://bootstrap.pypa.io/get-pip.py 2>/dev/null || echo "⚠️ Could not download get-pip.py"
+                sh '''
+                    echo "🔧 Installing Python dependencies..."
                     
-                    if [ -f get-pip.py ]; then
-                        ${PYTHON_PATH} get-pip.py --user 2>/dev/null || ${PYTHON_PATH} get-pip.py 2>/dev/null || echo "⚠️ get-pip.py installation failed"
-                        rm -f get-pip.py
-                    fi
-                fi
-            fi
-            
-            # Verify pip installation
-            if command -v pip3 &> /dev/null; then
-                echo "✅ Using system pip3"
-                PIP_CMD="pip3"
-            elif ${PYTHON_PATH} -m pip --version &> /dev/null; then
-                echo "✅ Using python3 -m pip"
-                PIP_CMD="${PYTHON_PATH} -m pip"
-            else
-                echo "❌ Could not install or find pip"
-                exit 1
-            fi
-            
-            echo "📈 Updating pip..."
-            $PIP_CMD install --upgrade pip --user || $PIP_CMD install --upgrade pip || echo "⚠️ pip upgrade failed"
-            
-            echo "📦 Installing selenium..."
-            $PIP_CMD install selenium --user || $PIP_CMD install selenium || echo "❌ selenium installation failed"
-            
-            echo "📦 Installing webdriver-manager..."
-            $PIP_CMD install webdriver-manager --user || $PIP_CMD install webdriver-manager || echo "❌ webdriver-manager installation failed"
-            
-            echo "📦 Installing additional packages..."
-            $PIP_CMD install requests urllib3 --user || $PIP_CMD install requests urllib3 || echo "⚠️ additional packages installation failed"
-            
-            # Verify installation
-            echo "🔍 Verifying installations..."
-            ${PYTHON_PATH} -c "
+                    # Upgrade pip
+                    echo "📈 Upgrading pip..."
+                    pip install --upgrade pip
+                    
+                    # Install Python packages
+                    echo "📦 Installing selenium..."
+                    pip install selenium
+                    
+                    echo "📦 Installing webdriver-manager..."
+                    pip install webdriver-manager
+                    
+                    echo "📦 Installing additional packages..."
+                    pip install requests urllib3
+                    
+                    # Verify installation
+                    echo "🔍 Verifying Python packages..."
+                    python3 -c "
 import sys
-success = True
+print(f'Python version: {sys.version}')
 
 try:
     import selenium
     print(f'✅ Selenium {selenium.__version__} installed successfully')
 except ImportError as e:
     print(f'❌ Selenium import failed: {e}')
-    success = False
+    sys.exit(1)
 
 try:
     import webdriver_manager
     print('✅ webdriver-manager installed successfully')
 except ImportError as e:
     print(f'❌ webdriver-manager import failed: {e}')
-    success = False
+    sys.exit(1)
 
-if not success:
-    print('⚠️ Some packages failed to install, but continuing...')
-    # Don't exit with error, let the pipeline continue
+try:
+    import requests
+    print(f'✅ requests installed successfully')
+except ImportError:
+    print('⚠️ requests not available')
+
+print('🎉 All required packages are ready!')
 "
-            
-            # Try to install Chrome
-            echo "🌐 Checking Chrome installation..."
-            if ! command -v google-chrome &> /dev/null; then
-                echo "📥 Attempting Chrome installation..."
-                
-                # Add Chrome repository and install
-                wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - 2>/dev/null || echo "⚠️ Could not add Chrome key"
-                echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list 2>/dev/null || echo "⚠️ Could not add Chrome repository"
-                apt-get update 2>/dev/null && apt-get install -y google-chrome-stable 2>/dev/null || echo "⚠️ Chrome installation failed - webdriver-manager will handle ChromeDriver"
-                
-                if command -v google-chrome &> /dev/null; then
-                    echo "✅ Chrome installed successfully"
-                    google-chrome --version 2>/dev/null || echo "Chrome installed but version check failed"
-                else
-                    echo "⚠️ Chrome not installed, but webdriver-manager should handle ChromeDriver download"
-                fi
-            else
-                echo "✅ Chrome is already available"
-                google-chrome --version 2>/dev/null || echo "Chrome available but version check failed"
-            fi
-            
-            echo "✅ Dependencies installation completed"
-        '''
-    }
-}
-
+                    
+                    echo "✅ Python dependencies installation completed"
+                '''
+            }
+        }
+        
         stage('Step 1: Create/Verify Temp Email') {
             steps {
                 script {
@@ -291,7 +283,7 @@ if not success:
             }
         }
         
-        // 🌐 STEP 2: Website Signup (with enhanced dependency check)
+        // 🌐 STEP 2: Website Signup
         stage('Step 2: Website Signup') {
             when {
                 // Run if user chose full process or signup only
@@ -309,7 +301,7 @@ if not success:
                 sh '''
                     echo "🤖 Running automated website signup..."
                     
-                    # Verify dependencies before running
+                    # Final dependency check
                     echo "🔍 Final dependency check..."
                     ${PYTHON_PATH} -c "
 import sys
@@ -326,9 +318,16 @@ try:
 except ImportError:
     print('❌ webdriver-manager not available')
     sys.exit(1)
+
+try:
+    from selenium import webdriver
+    print('✅ Selenium webdriver import successful')
+except ImportError as e:
+    print(f'❌ Selenium webdriver import failed: {e}')
+    sys.exit(1)
 "
                     
-                    # First verify we have the email file
+                    # Verify we have the email file
                     if [ ! -f "${TEMP_EMAIL_FILE}" ]; then
                         echo "❌ No email file found for signup"
                         exit 1
@@ -357,7 +356,7 @@ except ImportError:
                         echo "💡 This might be normal for slow connections"
                     else
                         echo "⚠️ Website signup completed with warnings (exit code: $SIGNUP_RESULT)"
-                        echo "💡 Check signup logs for details"
+                        echo "💡 Check signup logs and screenshots for details"
                     fi
                     
                     # List all created files for debugging
@@ -372,7 +371,7 @@ except ImportError:
             post {
                 always {
                     // Archive signup files and any screenshots
-                    archiveArtifacts artifacts: "signup_*.json,signup_*.png", allowEmptyArchive: true
+                    archiveArtifacts artifacts: "signup_*.json,signup_*.png,*.png", allowEmptyArchive: true
                 }
             }
         }
@@ -515,6 +514,7 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     echo "Build Number: ${BUILD_NUMBER}" >> "$REPORT_FILE"
                     echo "Jenkins Job: ${JOB_NAME}" >> "$REPORT_FILE"
                     echo "Manual Approval: ${APPROVAL_ACTION}" >> "$REPORT_FILE"
+                    echo "Environment: Docker with Python 3.11" >> "$REPORT_FILE"
                     echo "" >> "$REPORT_FILE"
                     
                     # Email info
@@ -557,6 +557,12 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                         ls -la *.png >> "$REPORT_FILE" 2>/dev/null || true
                     fi
                     
+                    # Environment info
+                    echo "" >> "$REPORT_FILE"
+                    echo "🐳 DOCKER ENVIRONMENT INFO:" >> "$REPORT_FILE"
+                    echo "Python: $(${PYTHON_PATH} --version)" >> "$REPORT_FILE"
+                    echo "Chrome: $(google-chrome --version 2>/dev/null || echo 'Not available')" >> "$REPORT_FILE"
+                    
                     # Dependency info
                     echo "" >> "$REPORT_FILE"
                     echo "🔧 PYTHON DEPENDENCIES:" >> "$REPORT_FILE"
@@ -572,6 +578,12 @@ try:
     print('✅ webdriver-manager: Available')
 except:
     print('❌ webdriver-manager: Not available')
+
+try:
+    import requests
+    print('✅ requests: Available')
+except:
+    print('❌ requests: Not available')
 " >> "$REPORT_FILE" 2>/dev/null || echo "Could not check dependencies" >> "$REPORT_FILE"
                     
                     echo "" >> "$REPORT_FILE"
@@ -593,7 +605,7 @@ except:
     post {
         always {
             script {
-                echo "🏁 Complete pipeline finished"
+                echo "🏁 Complete pipeline finished in Docker environment"
                 
                 // Clean up workspace but keep important files
                 sh '''
@@ -607,7 +619,7 @@ except:
         
         success {
             script {
-                echo "✅ Complete pipeline completed successfully"
+                echo "✅ Complete pipeline completed successfully in Docker"
                 
                 if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
                     echo "🎉 All steps completed: signup + message processing"
@@ -623,16 +635,20 @@ except:
         
         failure {
             script {
-                echo "❌ Pipeline failed"
+                echo "❌ Pipeline failed in Docker environment"
                 
                 // Try to capture more debug info
                 sh '''
                     echo "🔍 Debug information:"
                     echo "Python version: $(${PYTHON_PATH} --version 2>&1 || echo 'Python not found')"
+                    echo "Docker environment info:"
+                    cat /etc/os-release || echo "OS info not available"
                     echo "Pip packages:"
-                    ${PYTHON_PATH} -m pip list 2>/dev/null | grep -E "(selenium|webdriver)" || echo "No selenium packages found"
+                    ${PYTHON_PATH} -m pip list 2>/dev/null | grep -E "(selenium|webdriver|requests)" || echo "No relevant packages found"
                     echo "Current directory contents:"
                     ls -la
+                    echo "Chrome version:"
+                    google-chrome --version 2>/dev/null || echo "Chrome not available"
                 ''' 
             }
         }
