@@ -1,9 +1,9 @@
 pipeline {
     agent any
     
-    // Schedule the pipeline to run every 10 minutes
+    // Schedule the pipeline to run every 200 minutes
     triggers {
-        cron('H/10 * * * *')  // Runs every 10 minutes
+        cron('H/200 * * * *')  // Runs every 200 minutes
     }
     
     environment {
@@ -88,7 +88,48 @@ pipeline {
                 '''
             }
         }
+        stage('Install Python Dependencies') {
+    steps {
+        script {
+            echo "📦 Installing required Python packages for website signup..."
+        }
         
+        sh '''
+            echo "🔧 Installing Selenium and dependencies..."
+            
+            # Install required packages with user flag to avoid permission issues
+            python3 -m pip install --user selenium webdriver-manager
+            
+            # Alternative: try without --user if the above fails
+            if [ $? -ne 0 ]; then
+                echo "🔄 Retrying installation without --user flag..."
+                python3 -m pip install selenium webdriver-manager
+            fi
+            
+            # Verify installation
+            python3 -c "
+try:
+    import selenium
+    print(f'✅ Selenium {selenium.__version__} installed successfully')
+except ImportError as e:
+    print(f'❌ Selenium import failed: {e}')
+    exit(1)
+"
+            
+            python3 -c "
+try:
+    import webdriver_manager
+    print('✅ webdriver-manager installed successfully')
+except ImportError as e:
+    print(f'❌ webdriver-manager import failed: {e}')
+    exit(1)
+"
+            
+            echo "✅ All Python dependencies installed successfully"
+        '''
+    }
+}
+
         stage('Step 1: Create/Verify Temp Email') {
             steps {
                 script {
