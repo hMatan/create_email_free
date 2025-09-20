@@ -145,22 +145,25 @@ pipeline {
                 }
                 
                 // 🛑 This is where the pipeline PAUSES and waits for user input
-                input {
-                    message '📧 Ready to check for messages and process details?\n\n💌 Make sure you have sent test emails to the temporary address shown above.\n\nClick OK when ready to proceed with Steps 2 & 3.'
-                    ok 'OK - Proceed with message checking'
-                    parameters {
-                        choice(
-                            name: 'APPROVAL_ACTION',
-                            choices: ['PROCEED_WITH_BOTH', 'ONLY_CHECK_MESSAGES'],
-                            description: 'PROCEED_WITH_BOTH: Run steps 2 & 3 fully | ONLY_CHECK_MESSAGES: Run step 2 only, skip detailed processing'
-                        )
-                    }
-                }
-                
                 script {
+                    def userInput = input(
+                        message: '📧 Ready to check for messages and process details?\n\n💌 Make sure you have sent test emails to the temporary address shown above.\n\nClick OK when ready to proceed with Steps 2 & 3.',
+                        ok: 'OK - Proceed with message checking',
+                        parameters: [
+                            choice(
+                                name: 'APPROVAL_ACTION',
+                                choices: ['PROCEED_WITH_BOTH', 'ONLY_CHECK_MESSAGES'],
+                                description: 'PROCEED_WITH_BOTH: Run steps 2 & 3 fully | ONLY_CHECK_MESSAGES: Run step 2 only, skip detailed processing'
+                            )
+                        ]
+                    )
+                    
+                    // Store the user input for later use
+                    env.APPROVAL_ACTION = userInput
+                    
                     echo "✅ Manual approval received!"
-                    echo "🎛️ Selected action: ${params.APPROVAL_ACTION}"
-                    if (params.APPROVAL_ACTION == 'ONLY_CHECK_MESSAGES') {
+                    echo "🎛️ Selected action: ${env.APPROVAL_ACTION}"
+                    if (env.APPROVAL_ACTION == 'ONLY_CHECK_MESSAGES') {
                         echo "ℹ️ Step 3 (detailed processing) will be skipped"
                     } else {
                         echo "🚀 Both steps 2 & 3 will be executed"
@@ -220,7 +223,7 @@ else:
                     }
                     // Also check if user chose to proceed with step 3
                     expression {
-                        return params.APPROVAL_ACTION == 'PROCEED_WITH_BOTH'
+                        return env.APPROVAL_ACTION == 'PROCEED_WITH_BOTH'
                     }
                 }
             }
@@ -368,7 +371,7 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
         success {
             script {
                 echo "✅ Pipeline completed successfully"
-                if (params.APPROVAL_ACTION == 'ONLY_CHECK_MESSAGES') {
+                if (env.APPROVAL_ACTION == 'ONLY_CHECK_MESSAGES') {
                     echo "ℹ️ Step 3 (detailed processing) was skipped by user choice"
                 } else {
                     echo "🎉 All steps completed including detailed message processing"
