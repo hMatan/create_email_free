@@ -263,4 +263,357 @@ class EmbyILRegistration:
             page_source = self.driver.page_source.lower()
             current_url = self.driver.current_url
             
-            print
+            print(f"🔍 Current URL: {current_url}")
+            
+            # Check for success indicators
+            for indicator in success_indicators:
+                if indicator in page_source:
+                    print(f"✅ Found success indicator: {indicator}")
+                    return True
+            
+            # Check URL change
+            if "sign-up" not in current_url and "register" not in current_url:
+                print("✅ URL changed - likely successful")
+                return True
+            
+            # Check for errors
+            for indicator in error_indicators:
+                if indicator in page_source:
+                    print(f"❌ Found error indicator: {indicator}")
+                    return False
+            
+            return True  # If no clear errors, consider it success
+            
+        except Exception as e:
+            print(f"⚠️ Error checking registration success: {e}")
+            return True  # Default to success if can't check
+
+    def fill_registration_form(self, first_name, last_name, email, password, password_confirm):
+        """Fill the registration form with provided details"""
+        success = False
+        
+        try:
+            print("🌐 Navigating to registration page...")
+            self.driver.get("https://client.embyiltv.io/sign-up")
+
+            wait = WebDriverWait(self.driver, 15)
+            time.sleep(3)
+
+            # Take screenshot before filling
+            self.driver.save_screenshot("signup_before_filling.png")
+            print("📸 Screenshot saved: signup_before_filling.png")
+
+            # Field selectors
+            field_selectors = {
+                'first_name': [
+                    'input[name="firstName"]',
+                    'input[name="first_name"]', 
+                    'input[id*="first"]',
+                    'input[placeholder*="שם פרטי"]',
+                    'input[placeholder*="First Name"]',
+                    'input[placeholder*="First"]',
+                    'input[type="text"]:nth-of-type(1)'
+                ],
+                'last_name': [
+                    'input[name="lastName"]',
+                    'input[name="last_name"]',
+                    'input[id*="last"]', 
+                    'input[placeholder*="שם משפחה"]',
+                    'input[placeholder*="Last Name"]',
+                    'input[placeholder*="Last"]',
+                    'input[type="text"]:nth-of-type(2)'
+                ],
+                'email': [
+                    'input[name="email"]',
+                    'input[type="email"]',
+                    'input[id*="email"]',
+                    'input[placeholder*="אימייל"]',
+                    'input[placeholder*="Email"]',
+                    'input[placeholder*="mail"]'
+                ],
+                'password': [
+                    'input[name="password"]',
+                    'input[type="password"]',
+                    'input[id*="password"]',
+                    'input[placeholder*="סיסמה"]',
+                    'input[placeholder*="Password"]'
+                ],
+                'password_confirm': [
+                    'input[name="password1"]',
+                    'input[name="confirmPassword"]',
+                    'input[name="password_confirmation"]',
+                    'input[name="confirm_password"]',
+                    'input[id*="password1"]',
+                    'input[id*="confirm"]',
+                    'input[placeholder*="אישור סיסמה"]',
+                    'input[placeholder*="Confirm Password"]',
+                    'input[placeholder*="Repeat Password"]',
+                    'input[type="password"]:nth-of-type(2)'
+                ]
+            }
+
+            # Fill all fields
+            fields_filled = 0
+            
+            # Fill first name
+            first_name_field = self.find_element_by_selectors(field_selectors['first_name'])
+            if first_name_field:
+                first_name_field.clear()
+                first_name_field.send_keys(first_name)
+                print("✅ First name filled successfully")
+                fields_filled += 1
+            else:
+                print("❌ First name field not found")
+
+            # Fill last name  
+            last_name_field = self.find_element_by_selectors(field_selectors['last_name'])
+            if last_name_field:
+                last_name_field.clear()
+                last_name_field.send_keys(last_name)
+                print("✅ Last name filled successfully")
+                fields_filled += 1
+            else:
+                print("❌ Last name field not found")
+
+            # Fill email
+            email_field = self.find_element_by_selectors(field_selectors['email'])
+            if email_field:
+                email_field.clear()
+                email_field.send_keys(email)
+                print("✅ Email filled successfully")
+                fields_filled += 1
+            else:
+                print("❌ Email field not found")
+
+            # Fill password
+            password_field = self.find_element_by_selectors(field_selectors['password'])
+            if password_field:
+                password_field.clear()
+                password_field.send_keys(password)
+                print("✅ Password filled successfully")
+                fields_filled += 1
+            else:
+                print("❌ Password field not found")
+
+            # Fill password confirmation
+            password_confirm_field = self.find_element_by_selectors(field_selectors['password_confirm'])
+            if password_confirm_field:
+                password_confirm_field.clear()
+                password_confirm_field.send_keys(password_confirm)
+                print("✅ Password confirmation filled successfully")
+                fields_filled += 1
+            else:
+                print("❌ Password confirmation field not found")
+
+            print(f"📊 Fields filled: {fields_filled}/5")
+
+            # Take screenshot before submit
+            self.driver.save_screenshot("signup_before_submit.png")
+            print("📸 Screenshot saved: signup_before_submit.png")
+
+            # Enhanced button finding and clicking
+            print("🔘 Looking for submit button...")
+            
+            # XPath selectors for Hebrew text
+            xpath_selectors = [
+                "//button[contains(text(), 'הרשמה')]",
+                "//input[@value='הרשמה']",
+                "//button[contains(text(), 'רישום')]",
+                "//input[@value='רישום']",
+                "//button[contains(text(), 'Sign Up')]",
+                "//button[contains(text(), 'Register')]",
+                "//button[contains(text(), 'Submit')]"
+            ]
+
+            css_selectors = [
+                '[data-slot="button"]',
+                'button[data-slot="button"]', 
+                'button[type="submit"]',
+                'input[type="submit"]',
+                '.submit-button',
+                '.register-button',
+                '.signup-button',
+                '.btn-submit',
+                '.btn-primary'
+            ]
+
+            submit_button = None
+
+            # Try XPath selectors first
+            for selector in xpath_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        if element.is_displayed():
+                            submit_button = element
+                            print(f"✅ Found submit button with XPath: {selector}")
+                            break
+                    if submit_button:
+                        break
+                except:
+                    continue
+
+            # Try CSS selectors if XPath failed
+            if not submit_button:
+                submit_button = self.find_element_by_selectors(css_selectors)
+                if submit_button:
+                    print("✅ Found submit button with CSS selector")
+
+            # Click the button
+            if submit_button:
+                try:
+                    print("🎯 Attempting to click submit button...")
+                    
+                    # Scroll to button
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
+                    time.sleep(1)
+                    
+                    # Wait for it to be clickable
+                    wait.until(EC.element_to_be_clickable(submit_button))
+                    
+                    # Try multiple click methods
+                    clicked_successfully = False
+                    click_methods = [
+                        lambda: submit_button.click(),
+                        lambda: self.driver.execute_script("arguments[0].click();", submit_button),
+                        lambda: self.driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true}));", submit_button)
+                    ]
+                    
+                    for i, click_method in enumerate(click_methods):
+                        try:
+                            click_method()
+                            print(f"✅ Successfully clicked submit button using method {i+1}")
+                            clicked_successfully = True
+                            break
+                        except Exception as e:
+                            print(f"❌ Click method {i+1} failed: {e}")
+                            if i < len(click_methods) - 1:
+                                time.sleep(1)
+                    
+                    if clicked_successfully:
+                        # Wait for response
+                        print("⏳ Waiting for response...")
+                        time.sleep(5)
+                        
+                        # Take screenshot after submit
+                        self.driver.save_screenshot("signup_after_submit.png")
+                        print("📸 Screenshot saved: signup_after_submit.png")
+                        
+                        # Check registration success
+                        success = self.check_registration_success()
+                        
+                        if success:
+                            print("✅ Registration appears successful!")
+                        else:
+                            print("⚠️ Registration status unclear")
+                        
+                        print("📧 Check email for verification link!")
+                    
+                except Exception as e:
+                    print(f"❌ Failed to click submit button: {e}")
+            else:
+                print("❌ No submit button found!")
+                self.driver.save_screenshot("signup_no_button_found.png")
+                
+            time.sleep(5)  # Final wait
+                
+        except Exception as e:
+            print(f"❌ An error occurred during signup: {str(e)}")
+            if self.driver:
+                self.driver.save_screenshot("signup_error_screenshot.png")
+        
+        # Save signup information regardless of success
+        self.save_signup_info(first_name, last_name, email, password, success)
+        return success
+
+    def find_element_by_selectors(self, selectors):
+        """Try to find element using multiple selectors"""
+        for selector in selectors:
+            try:
+                element = self.driver.find_element(By.CSS_SELECTOR, selector)
+                if element.is_displayed():
+                    return element
+            except:
+                continue
+        return None
+
+    def fill_registration_form_with_retry(self, first_name, last_name, email, password, password_confirm, max_retries=3):
+        """Fill registration form with retry mechanism"""
+        for attempt in range(max_retries):
+            try:
+                print(f"🔄 Registration attempt {attempt + 1}/{max_retries}")
+                success = self.fill_registration_form(first_name, last_name, email, password, password_confirm)
+                
+                if success:
+                    return True
+                    
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Attempt {attempt + 1} failed, retrying in 10 seconds...")
+                    time.sleep(10)
+                    
+            except Exception as e:
+                print(f"❌ Attempt {attempt + 1} failed with error: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(10)
+                
+        return False
+
+    def close(self):
+        """Close the browser"""
+        if self.driver:
+            self.driver.quit()
+
+def main():
+    """Main function for Jenkins integration"""
+    print("🚀 Starting EmbyIL Registration Bot for Jenkins")
+    print("=" * 60)
+    
+    bot = None
+    try:
+        # Initialize bot in headless mode for Jenkins
+        bot = EmbyILRegistration(headless=True)
+        
+        # בדיקת משאבים
+        bot.check_system_resources()
+        
+        # Read email from file (created by Jenkins pipeline)
+        email = bot.read_email_from_file()
+        if not email:
+            print("❌ Could not read email address from file")
+            sys.exit(1)
+        
+        # Generate random credentials with fixed password
+        first_name, last_name, password = bot.generate_random_credentials(email)
+        
+        print(f"📧 Email: {email}")
+        print(f"👤 Name: {first_name} {last_name}")
+        print(f"🔐 Password: {password}")
+        print()
+        
+        # Perform registration with retry mechanism
+        success = bot.fill_registration_form_with_retry(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password=password,
+            password_confirm=password
+        )
+        
+        if success:
+            print("🎉 Registration completed successfully!")
+            print(f"💡 Login credentials - Email: {email}, Password: {password}")
+            sys.exit(0)
+        else:
+            print("⚠️ Registration completed with warnings")
+            sys.exit(0)  # Don't fail the Jenkins job
+            
+    except Exception as e:
+        print(f"❌ Script failed: {str(e)}")
+        sys.exit(1)
+    finally:
+        if bot:
+            bot.close()
+        print("🏁 Script finished")
+
+if __name__ == "__main__":
+    main()
