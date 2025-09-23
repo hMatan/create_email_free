@@ -48,12 +48,30 @@ pipeline {
                     echo "🐳 Running in Jenkins Docker container"
                 }
                 
-                // Clean up old files if needed (optional)
+                // Clean up old files from previous runs
                 sh '''
-                    echo "🧹 Cleaning up old files..."
-                    find . -name "message_details_*.json" -mtime +7 -delete || true
-                    find . -name "signup_*.json" -mtime +7 -delete || true
-                    find . -name "*.png" -mtime +7 -delete || true
+                    echo "🧹 Cleaning up old files (older than 2 hours)..."
+                    
+                    # Delete old summary files
+                    find . -name "complete_pipeline_summary_*.txt" -mmin +120 -delete || true
+                    find . -name "build_*_summary_*.txt" -mmin +120 -delete || true
+                    
+                    # Delete old signup files
+                    find . -name "signup_*.json" -mmin +120 -delete || true
+                    find . -name "signup_*.png" -mmin +120 -delete || true
+                    
+                    # Delete old message details files
+                    find . -name "message_details_*.json" -mmin +120 -delete || true
+                    
+                    # Delete old screenshots
+                    find . -name "*.png" -mmin +120 -delete || true
+                    
+                    # Delete old log files
+                    find . -name "*.log" -mmin +120 -delete || true
+                    
+                    echo "✅ Old files cleaned"
+                    echo "📁 Current files:"
+                    ls -la *.txt *.json *.png 2>/dev/null || echo "No artifacts yet - starting fresh"
                 '''
             }
         }
@@ -100,7 +118,9 @@ pipeline {
                 sh '''
                     echo "🔧 Installing Python packages directly (no sudo needed in container)..."
                     
-                    # Since we're already in a container, try direct installation
+                    # Update PATH to include user-installed packages
+                    export PATH="$HOME/.local/bin:$PATH"
+                    export PYTHONPATH="$HOME/.local/lib/python3.11/site-packages:$PYTHONPATH"
                     
                     # Method 1: Try using existing pip3
                     if command -v pip3 >/dev/null 2>&1; then
@@ -207,12 +227,16 @@ print(f'Python executable: {sys.executable}')
 print(f'Python path: {sys.path}')
 "
                     
-                    # Verify Chrome
+                    # Verify Chrome and shared memory
                     if command -v google-chrome >/dev/null 2>&1; then
                         echo "✅ Chrome: $(google-chrome --version 2>/dev/null || echo 'installed')"
                     else
                         echo "⚠️ Chrome not found in PATH"
                     fi
+                    
+                    # Check shared memory size
+                    echo "💾 Checking shared memory:"
+                    df -h /dev/shm 2>/dev/null || echo "⚠️ Could not check /dev/shm"
                     
                     echo "✅ Dependencies installation completed"
                 '''
@@ -286,7 +310,7 @@ print(f'Python path: {sys.path}')
                 // 🛑 This is where the pipeline PAUSES and waits for user input
                 script {
                     def userInput = input(
-                        message: '📧 Ready to proceed with website signup and message processing?\\n\\n🌐 Step 2: Website signup with the temporary email\\n📬 Steps 3&4: Check and process messages\\n\\nClick OK to continue.',
+                        message: '📧 Ready to proceed with website signup and message processing?\n\n🌐 Step 2: Website signup with the temporary email\n📬 Steps 3&4: Check and process messages\n\nClick OK to continue.',
                         ok: 'OK - Proceed with all steps',
                         parameters: [
                             choice(
@@ -377,6 +401,10 @@ if not selenium_available:
                     # Extract email address for display
                     EMAIL_ADDR=$(grep 'EMAIL_ADDRESS=' "${TEMP_EMAIL_FILE}" | cut -d'=' -f2 || echo 'Unknown')
                     echo "📧 Using email for signup: $EMAIL_ADDR"
+                    
+                    # Check shared memory before running Chrome
+                    echo "💾 Shared memory status before Chrome:"
+                    df -h /dev/shm 2>/dev/null || echo "⚠️ Could not check /dev/shm"
                     
                     # Run the signup automation with extended timeout and proper PATH
                     echo "🚀 Starting website signup automation..."
@@ -516,7 +544,7 @@ print(f'📧 Processing {len(filtered_messages)} matching messages...')
 # Process each message automatically (save all to JSON)
 for i, message in enumerate(filtered_messages, 1):
     message_id = message.get('id', f'unknown_{i}')
-    print(f'\\n--- Processing Message {i}/{len(filtered_messages)} ---')
+    print(f'\n--- Processing Message {i}/{len(filtered_messages)} ---')
     display_message_details(message, i)
     
     # Auto-save all message details
@@ -548,11 +576,13 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                 }
                 
                 sh '''
-                    # Create a comprehensive summary report
-                    REPORT_FILE="complete_pipeline_summary_$(date +%Y%m%d_%H%M%S).txt"
+                    # Create a comprehensive summary report with build number
+                    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                    REPORT_FILE="build_${BUILD_NUMBER}_summary_${TIMESTAMP}.txt"
                     
-                    echo "=== COMPLETE EMAIL & SIGNUP PIPELINE SUMMARY ===" > "$REPORT_FILE"
-                    echo "Date: $(date)" >> "$REPORT_FILE"
+                    echo "=== BUILD ${BUILD_NUMBER} - COMPLETE PIPELINE SUMMARY ===" > "$REPORT_FILE"
+                    echo "Timestamp: ${TIMESTAMP}" >> "$REPORT_FILE"
+                    echo "Build Date: $(date)" >> "$REPORT_FILE"
                     echo "Build Number: ${BUILD_NUMBER}" >> "$REPORT_FILE"
                     echo "Jenkins Job: ${JOB_NAME}" >> "$REPORT_FILE"
                     echo "Manual Approval: ${APPROVAL_ACTION}" >> "$REPORT_FILE"
@@ -604,6 +634,7 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     echo "🐳 DOCKER CONTAINER INFO:" >> "$REPORT_FILE"
                     echo "Python: $(${PYTHON_PATH} --version 2>/dev/null || echo 'Not available')" >> "$REPORT_FILE"
                     echo "Chrome: $(google-chrome --version 2>/dev/null || echo 'Not available')" >> "$REPORT_FILE"
+                    echo "Shared Memory: $(df -h /dev/shm 2>/dev/null | tail -1 || echo 'Not available')" >> "$REPORT_FILE"
                     
                     # Dependency info
                     echo "" >> "$REPORT_FILE"
@@ -639,16 +670,16 @@ except:
 " >> "$REPORT_FILE" 2>/dev/null || echo "Could not check dependencies" >> "$REPORT_FILE"
                     
                     echo "" >> "$REPORT_FILE"
-                    echo "=== END COMPLETE SUMMARY ===" >> "$REPORT_FILE"
+                    echo "=== END BUILD ${BUILD_NUMBER} SUMMARY ===" >> "$REPORT_FILE"
                     
-                    echo "📄 Complete summary report created: $REPORT_FILE"
+                    echo "📄 Build summary report created: $REPORT_FILE"
                     cat "$REPORT_FILE"
                 '''
             }
             
             post {
                 success {
-                    archiveArtifacts artifacts: "complete_pipeline_summary_*.txt", allowEmptyArchive: true
+                    archiveArtifacts artifacts: "build_*_summary_*.txt", allowEmptyArchive: true
                 }
             }
         }
@@ -665,6 +696,13 @@ except:
                     # Remove Python cache files
                     find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
                     find . -name "*.pyc" -delete 2>/dev/null || true
+                    
+                    # Keep only current build artifacts
+                    echo "📁 Final artifact count:"
+                    echo "Summary files: $(ls -1 build_${BUILD_NUMBER}_summary_*.txt 2>/dev/null | wc -l)"
+                    echo "Signup files: $(ls -1 signup_*.json 2>/dev/null | wc -l)" 
+                    echo "Message files: $(ls -1 message_details_*.json 2>/dev/null | wc -l)"
+                    echo "Screenshots: $(ls -1 *.png 2>/dev/null | wc -l)"
                 '''
             }
         }
@@ -682,6 +720,7 @@ except:
                 }
                 
                 echo "📊 Check archived artifacts for detailed results"
+                echo "🏷️ Build ${BUILD_NUMBER} artifacts are clearly labeled"
             }
         }
         
@@ -698,12 +737,11 @@ except:
                     echo "PATH: $PATH"
                     echo "HOME: $HOME"
                     echo "User: $(whoami)"
-                    echo "Pip packages in user directory:"
-                    ls -la $HOME/.local/lib/python*/site-packages/ 2>/dev/null | head -20 || echo "No user packages found"
+                    echo "Shared memory: $(df -h /dev/shm 2>/dev/null || echo 'Not available')"
+                    echo "Memory info: $(free -h 2>/dev/null || echo 'Not available')"
+                    echo "Chrome version: $(google-chrome --version 2>/dev/null || echo 'Chrome not available')"
                     echo "Current directory contents:"
                     ls -la
-                    echo "Chrome version:"
-                    google-chrome --version 2>/dev/null || echo "Chrome not available"
                 ''' 
             }
         }
