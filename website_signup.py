@@ -135,21 +135,21 @@ class EmbyILRegistration:
             return None
 
     def generate_random_credentials(self, email):
-        """Generate random credentials for signup"""
-        import random
-        import string
-        
-        # Generate random names
-        first_names = ['John', 'Jane', 'Mike', 'Sarah', 'David', 'Emma', 'Chris', 'Lisa']
-        last_names = ['Smith', 'Johnson', 'Brown', 'Davis', 'Miller', 'Wilson', 'Moore', 'Taylor']
-        
-        first_name = random.choice(first_names)
-        last_name = random.choice(last_names)
-        
-        # Generate strong password
-        password = ''.join(random.choices(string.ascii_letters + string.digits + '!@#$', k=12))
-        
-        return first_name, last_name, password
+    """Generate random credentials for signup with fixed password"""
+    import random
+    
+    # Generate random names
+    first_names = ['John', 'Jane', 'Mike', 'Sarah', 'David', 'Emma', 'Chris', 'Lisa']
+    last_names = ['Smith', 'Johnson', 'Brown', 'Davis', 'Miller', 'Wilson', 'Moore', 'Taylor']
+    
+    first_name = random.choice(first_names)
+    last_name = random.choice(last_names)
+    
+    # Fixed password as requested
+    password = 'Aa123456!'
+    
+    return first_name, last_name, password
+
 
     def save_signup_info(self, first_name, last_name, email, password, success=False):
         """Save signup information to JSON file"""
