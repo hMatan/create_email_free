@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jenkins-server
+    restart: always
+    ports:
+      - "9999:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - JAVA_OPTS=-Xmx2048m -Xms1024m -Djenkins.install.runSetupWizard=false
+      - PYTHON_PATH=/usr/bin/python3
+      - DISPLAY=:99
+      - CHROME_BIN=/usr/bin/google-chrome
+      - PIP_BREAK_SYSTEM_PACKAGES=1
+    # הגדלת משאבים
+    shm_size: '4gb'  # הגדלה ל-4GB
+    mem_limit: 8g    # הגבלת זיכרון ל-8GB
+    memswap_limit: 8g
+    cpus: 4.0        # הגבלת CPU ל-4 cores
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+    hostname: jenkins-selenium
+    # הוספת sysctls לביצועים טובים יותר
+    sysctls:
+      - net.core.somaxconn=65535
+
+volumes:
+  jenkins_home:
+    driver: local
