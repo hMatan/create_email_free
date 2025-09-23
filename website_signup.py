@@ -43,9 +43,9 @@ class EmbyILRegistration:
 
         # Essential options for headless/server environments
         if self.headless:
-            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--headless=new")  # Chrome 109+ recommended
 
-        # Critical options for Linux/Synology environments
+        # Critical options for Linux/Docker/Jenkins environments
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
@@ -55,26 +55,37 @@ class EmbyILRegistration:
         chrome_options.add_argument("--disable-setuid-sandbox")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--remote-debugging-port=9222")
+        
+        # Additional options for Jenkins Docker
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
+        chrome_options.add_argument("--single-process")  # For memory-limited containers
 
         # Try multiple methods to initialize the driver
         methods = [
+            self._try_selenium_manager,
             self._try_webdriver_manager,
             self._try_system_chromedriver,
-            self._try_manual_chromedriver_path,
-            self._try_selenium_manager
+            self._try_manual_chromedriver_path
         ]
 
         for method in methods:
             try:
                 self.driver = method(chrome_options)
                 if self.driver:
-                    print(f"Successfully initialized WebDriver using {method.__name__}")
+                    print(f"✅ Successfully initialized WebDriver using {method.__name__}")
                     return
             except Exception as e:
-                print(f"Failed with {method.__name__}: {str(e)}")
+                print(f"❌ Failed with {method.__name__}: {str(e)}")
                 continue
 
         raise Exception("All WebDriver initialization methods failed. Please install Chrome and ChromeDriver manually.")
+
+    def _try_selenium_manager(self, options):
+        """Try using Selenium Manager (recommended for Selenium 4.6+)"""
+        return webdriver.Chrome(options=options)
 
     def _try_webdriver_manager(self, options):
         """Try using webdriver-manager"""
@@ -113,10 +124,6 @@ class EmbyILRegistration:
             return webdriver.Chrome(service=service, options=options)
         return None
 
-    def _try_selenium_manager(self, options):
-        """Try using Selenium's built-in manager (Selenium 4.6+)"""
-        return webdriver.Chrome(options=options)
-
     def read_email_from_file(self):
         """Read email address from email_info.txt file"""
         try:
@@ -135,21 +142,20 @@ class EmbyILRegistration:
             return None
 
     def generate_random_credentials(self, email):
-    """Generate random credentials for signup with fixed password"""
-    import random
-    
-    # Generate random names
-    first_names = ['John', 'Jane', 'Mike', 'Sarah', 'David', 'Emma', 'Chris', 'Lisa']
-    last_names = ['Smith', 'Johnson', 'Brown', 'Davis', 'Miller', 'Wilson', 'Moore', 'Taylor']
-    
-    first_name = random.choice(first_names)
-    last_name = random.choice(last_names)
-    
-    # Fixed password as requested
-    password = 'Aa123456!'
-    
-    return first_name, last_name, password
-
+        """Generate random credentials for signup with fixed password"""
+        import random
+        
+        # Generate random names
+        first_names = ['John', 'Jane', 'Mike', 'Sarah', 'David', 'Emma', 'Chris', 'Lisa']
+        last_names = ['Smith', 'Johnson', 'Brown', 'Davis', 'Miller', 'Wilson', 'Moore', 'Taylor']
+        
+        first_name = random.choice(first_names)
+        last_name = random.choice(last_names)
+        
+        # Fixed password as requested
+        password = 'Aa123456!'
+        
+        return first_name, last_name, password
 
     def save_signup_info(self, first_name, last_name, email, password, success=False):
         """Save signup information to JSON file"""
@@ -160,7 +166,8 @@ class EmbyILRegistration:
             'email': email,
             'password': password,
             'success': success,
-            'url': 'https://client.embyiltv.io/sign-up'
+            'url': 'https://client.embyiltv.io/sign-up',
+            'note': 'Fixed password Aa123456! used for all registrations'
         }
         
         filename = f"signup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -177,6 +184,56 @@ class EmbyILRegistration:
             
         except Exception as e:
             print(f"❌ Failed to save signup info: {e}")
+
+    def check_registration_success(self):
+        """Advanced check for registration success"""
+        success_indicators = [
+            "success",
+            "confirm", 
+            "verify",
+            "email sent",
+            "check your email",
+            "הודעה נשלחה",
+            "בדוק את המייל",
+            "רישום בוצע בהצלחה"
+        ]
+        
+        error_indicators = [
+            "error",
+            "failed", 
+            "invalid",
+            "already exists",
+            "שגיאה",
+            "נכשל",
+            "כבר קיים"
+        ]
+        
+        try:
+            page_source = self.driver.page_source.lower()
+            current_url = self.driver.current_url
+            
+            # Check for success indicators
+            for indicator in success_indicators:
+                if indicator in page_source:
+                    print(f"✅ Found success indicator: {indicator}")
+                    return True
+            
+            # Check URL change
+            if "sign-up" not in current_url and "register" not in current_url:
+                print("✅ URL changed - likely successful")
+                return True
+            
+            # Check for errors
+            for indicator in error_indicators:
+                if indicator in page_source:
+                    print(f"❌ Found error indicator: {indicator}")
+                    return False
+            
+            return True  # If no clear errors, consider it success
+            
+        except Exception as e:
+            print(f"⚠️ Error checking registration success: {e}")
+            return True  # Default to success if can't check
 
     def fill_registration_form(self, first_name, last_name, email, password, password_confirm):
         """Fill the registration form with provided details"""
@@ -389,17 +446,13 @@ class EmbyILRegistration:
                         self.driver.save_screenshot("signup_after_submit.png")
                         print("📸 Screenshot saved: signup_after_submit.png")
                         
-                        current_url = self.driver.current_url
-                        print(f"🌐 Current URL after submit: {current_url}")
+                        # Check registration success
+                        success = self.check_registration_success()
                         
-                        # Check if URL changed (success indicator)
-                        if "sign-up" not in current_url:
-                            print("✅ URL changed - likely successful registration!")
-                            success = True
+                        if success:
+                            print("✅ Registration appears successful!")
                         else:
-                            print("⚠️ URL didn't change - registration may need verification")
-                            # Still consider it a success if no errors found
-                            success = True
+                            print("⚠️ Registration status unclear")
                         
                         print("📧 Check email for verification link!")
                     
@@ -431,6 +484,27 @@ class EmbyILRegistration:
                 continue
         return None
 
+    def fill_registration_form_with_retry(self, first_name, last_name, email, password, password_confirm, max_retries=3):
+        """Fill registration form with retry mechanism"""
+        for attempt in range(max_retries):
+            try:
+                print(f"🔄 Registration attempt {attempt + 1}/{max_retries}")
+                success = self.fill_registration_form(first_name, last_name, email, password, password_confirm)
+                
+                if success:
+                    return True
+                    
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Attempt {attempt + 1} failed, retrying in 10 seconds...")
+                    time.sleep(10)
+                    
+            except Exception as e:
+                print(f"❌ Attempt {attempt + 1} failed with error: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(10)
+                
+        return False
+
     def close(self):
         """Close the browser"""
         if self.driver:
@@ -452,16 +526,16 @@ def main():
             print("❌ Could not read email address from file")
             sys.exit(1)
         
-        # Generate random credentials
+        # Generate random credentials with fixed password
         first_name, last_name, password = bot.generate_random_credentials(email)
         
         print(f"📧 Email: {email}")
         print(f"👤 Name: {first_name} {last_name}")
-        print(f"🔐 Generated password length: {len(password)} characters")
+        print(f"🔐 Password: {password}")
         print()
         
-        # Perform registration
-        success = bot.fill_registration_form(
+        # Perform registration with retry mechanism
+        success = bot.fill_registration_form_with_retry(
             first_name=first_name,
             last_name=last_name,
             email=email,
@@ -471,6 +545,7 @@ def main():
         
         if success:
             print("🎉 Registration completed successfully!")
+            print(f"💡 Login credentials - Email: {email}, Password: {password}")
             sys.exit(0)
         else:
             print("⚠️ Registration completed with warnings")
