@@ -2,8 +2,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 import time
 import os
 import subprocess
@@ -22,26 +24,13 @@ class EmbyILRegistration:
         """
         self.driver = None
         self.headless = headless
+        self.browser_type = None
         self.setup_driver()
 
-    def install_webdriver_manager(self):
-        """Install webdriver-manager if not available"""
-        try:
-            import webdriver_manager
-            return True
-        except ImportError:
-            print("Installing webdriver-manager...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "webdriver-manager"])
-                return True
-            except subprocess.CalledProcessError:
-                print("Failed to install webdriver-manager")
-                return False
-
     def check_system_resources(self):
-        """Check system resources and shared memory"""
+        """Check system resources and available browsers"""
         try:
-            print("🔍 Checking system resources...")
+            print("🔍 Checking system resources and browsers...")
             
             # בדיקת /dev/shm
             result = subprocess.run(['df', '-h', '/dev/shm'], 
@@ -57,121 +46,65 @@ class EmbyILRegistration:
                 print("🧠 System memory:")
                 print(result.stdout)
                 
-            # בדיקת גרסת Chrome
+            # בדיקת דפדפנים זמינים
+            browsers = []
+            
+            # Chrome
             result = subprocess.run(['google-chrome', '--version'], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
-                print(f"🌐 Chrome version: {result.stdout.strip()}")
+                print(f"🌐 Chrome: {result.stdout.strip()}")
+                browsers.append("Chrome")
+            
+            # Firefox
+            result = subprocess.run(['firefox-esr', '--version'], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"🦊 Firefox: {result.stdout.strip()}")
+                browsers.append("Firefox")
+                
+            print(f"📋 Available browsers: {', '.join(browsers)}")
                 
         except Exception as e:
             print(f"⚠️ Could not check system resources: {e}")
 
     def setup_driver(self):
-        """Setup Chrome WebDriver with maximum Docker stability"""
-        chrome_options = Options()
+        """Setup WebDriver with Firefox as primary choice, Chrome as fallback"""
+        print("🔧 Setting up WebDriver - Firefox first, Chrome as fallback...")
         
-        print("🔧 Configuring Chrome for maximum Docker stability...")
-
-        # Essential headless options
-        if self.headless:
-            chrome_options.add_argument("--headless=new")
-
-        # Core Docker stability options
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-background-timer-throttling")
-        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
-        chrome_options.add_argument("--disable-renderer-backgrounding")
-        
-        # Memory and performance optimization
-        chrome_options.add_argument("--memory-pressure-off")
-        chrome_options.add_argument("--max-old-space-size=2048")
-        chrome_options.add_argument("--js-flags=--max-old-space-size=2048")
-        
-        # Disable unnecessary features
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--disable-features=VizDisplayCompositor,TranslateUI")
-        chrome_options.add_argument("--disable-ipc-flooding-protection")
-        
-        # Process management
-        chrome_options.add_argument("--single-process")
-        chrome_options.add_argument("--disable-background-networking")
-        chrome_options.add_argument("--disable-default-apps")
-        chrome_options.add_argument("--disable-sync")
-        
-        # Network and security
-        chrome_options.add_argument("--allow-running-insecure-content")
-        chrome_options.add_argument("--ignore-certificate-errors")
-        chrome_options.add_argument("--ignore-ssl-errors")
-        chrome_options.add_argument("--ignore-certificate-errors-spki-list")
-        
-        # Window and display
-        chrome_options.add_argument("--window-size=1280,720")  # Smaller window
-        chrome_options.add_argument("--start-maximized")
-        
-        # Logging for debugging
-        chrome_options.add_argument("--enable-logging")
-        chrome_options.add_argument("--log-level=0")
-        chrome_options.add_argument("--v=1")
-        
-        # Set user data directory to prevent conflicts
-        user_data_dir = tempfile.mkdtemp(prefix="chrome_", suffix="_profile")
-        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-        
-        print(f"📁 Chrome user data directory: {user_data_dir}")
-
-        # Try each method with extensive error handling
+        # Try Firefox first (more stable in Docker)
         methods = [
-            ('Selenium Manager', self._try_selenium_manager),
-            ('WebDriver Manager', self._try_webdriver_manager),
-            ('System ChromeDriver', self._try_system_chromedriver),
-            ('Manual Path', self._try_manual_chromedriver_path)
+            ('Firefox', self._try_firefox),
+            ('Chrome with minimal options', self._try_chrome_minimal),
+            ('Chrome with full options', self._try_chrome_full)
         ]
 
-        for method_name, method in methods:
-            for attempt in range(3):  # 3 attempts per method
+        for browser_name, method in methods:
+            for attempt in range(2):  # 2 attempts per method
                 try:
-                    print(f"🔄 Attempting {method_name} (attempt {attempt + 1}/3)...")
+                    print(f"🔄 Attempting {browser_name} (attempt {attempt + 1}/2)...")
                     
-                    self.driver = method(chrome_options)
+                    self.driver = method()
                     if self.driver:
-                        print(f"✅ Driver created with {method_name}")
+                        print(f"✅ Driver created with {browser_name}")
+                        self.browser_type = browser_name
                         
-                        # Extended test - try multiple simple operations
-                        test_operations = [
-                            ("Loading empty page", lambda: self.driver.get("data:,")),
-                            ("Getting title", lambda: self.driver.title),
-                            ("Getting current URL", lambda: self.driver.current_url),
-                            ("Setting window size", lambda: self.driver.set_window_size(1280, 720))
-                        ]
-                        
-                        all_tests_passed = True
-                        for test_name, test_func in test_operations:
-                            try:
-                                print(f"🧪 Testing: {test_name}...")
-                                result = test_func()
-                                print(f"✅ {test_name}: OK")
-                                time.sleep(1)  # Small delay between tests
-                            except Exception as e:
-                                print(f"❌ {test_name} failed: {e}")
-                                all_tests_passed = False
-                                break
-                        
-                        if all_tests_passed:
-                            print(f"🎉 All tests passed! {method_name} is working correctly")
+                        # Simple test
+                        try:
+                            print("🧪 Testing basic functionality...")
+                            self.driver.get("data:,")
+                            print("✅ Basic test passed")
+                            self.driver.set_window_size(1280, 720)
+                            print("✅ Window size set")
+                            print(f"🎉 {browser_name} is working correctly!")
                             return
-                        else:
-                            print(f"⚠️ Tests failed for {method_name}, trying next...")
+                        except Exception as e:
+                            print(f"❌ Basic test failed: {e}")
                             self.driver.quit()
                             self.driver = None
                             
                 except Exception as e:
-                    print(f"❌ {method_name} attempt {attempt + 1} failed: {str(e)}")
+                    print(f"❌ {browser_name} attempt {attempt + 1} failed: {str(e)}")
                     if self.driver:
                         try:
                             self.driver.quit()
@@ -179,52 +112,93 @@ class EmbyILRegistration:
                             pass
                         self.driver = None
                     
-                    if attempt < 2:  # Not the last attempt
-                        print(f"⏳ Waiting 5 seconds before retry...")
-                        time.sleep(5)
+                    if attempt < 1:  # Not the last attempt
+                        print("⏳ Waiting 3 seconds before retry...")
+                        time.sleep(3)
 
-        raise Exception("All WebDriver initialization methods failed after multiple attempts. Chrome appears unstable in this Docker environment.")
+        raise Exception("All browser initialization methods failed. Neither Firefox nor Chrome are working in this Docker environment.")
 
-    def _try_selenium_manager(self, options):
-        """Try using Selenium Manager (recommended for Selenium 4.6+)"""
-        return webdriver.Chrome(options=options)
+    def _try_firefox(self):
+        """Try Firefox with optimized Docker settings"""
+        firefox_options = FirefoxOptions()
+        
+        if self.headless:
+            firefox_options.add_argument("--headless")
+        
+        # Firefox Docker optimizations
+        firefox_options.add_argument("--no-sandbox")
+        firefox_options.add_argument("--disable-dev-shm-usage")
+        firefox_options.add_argument("--disable-gpu")
+        firefox_options.add_argument("--window-size=1280,720")
+        
+        # Firefox specific preferences
+        firefox_options.set_preference("dom.webdriver.enabled", False)
+        firefox_options.set_preference("useAutomationExtension", False)
+        firefox_options.set_preference("general.useragent.override", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+        firefox_options.set_preference("media.volume_scale", "0.0")  # Mute audio
+        firefox_options.set_preference("dom.webnotifications.enabled", False)
+        firefox_options.set_preference("dom.push.enabled", False)
+        
+        # Create Firefox profile directory
+        profile_dir = tempfile.mkdtemp(prefix="firefox_", suffix="_profile")
+        firefox_options.set_preference("profile", profile_dir)
+        
+        print(f"📁 Firefox profile directory: {profile_dir}")
+        
+        try:
+            service = FirefoxService("/usr/bin/geckodriver")
+            return webdriver.Firefox(service=service, options=firefox_options)
+        except Exception as e:
+            print(f"Firefox initialization failed: {e}")
+            return None
 
-    def _try_webdriver_manager(self, options):
-        """Try using webdriver-manager"""
-        if self.install_webdriver_manager():
-            from webdriver_manager.chrome import ChromeDriverManager
-            service = Service(ChromeDriverManager().install())
-            return webdriver.Chrome(service=service, options=options)
-        return None
+    def _try_chrome_minimal(self):
+        """Try Chrome with absolutely minimal options"""
+        chrome_options = ChromeOptions()
+        
+        if self.headless:
+            chrome_options.add_argument("--headless=new")
+        
+        # Only the most essential options
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1280,720")
+        
+        try:
+            return webdriver.Chrome(options=chrome_options)
+        except Exception as e:
+            print(f"Minimal Chrome failed: {e}")
+            return None
 
-    def _try_system_chromedriver(self, options):
-        """Try using system-installed chromedriver"""
-        possible_paths = [
-            "/usr/bin/chromedriver",
-            "/usr/local/bin/chromedriver",
-            "/opt/chromedriver",
-            "chromedriver"
-        ]
+    def _try_chrome_full(self):
+        """Try Chrome with full optimization (last resort)"""
+        chrome_options = ChromeOptions()
+        
+        if self.headless:
+            chrome_options.add_argument("--headless=new")
 
-        for path in possible_paths:
-            try:
-                if os.path.exists(path) or path == "chromedriver":
-                    service = Service(path)
-                    return webdriver.Chrome(service=service, options=options)
-            except Exception:
-                continue
-        return None
-
-    def _try_manual_chromedriver_path(self, options):
-        """Try using manually downloaded chromedriver"""
-        current_dir = os.getcwd()
-        chromedriver_path = os.path.join(current_dir, "chromedriver")
-
-        if os.path.exists(chromedriver_path):
-            os.chmod(chromedriver_path, 0o755)
-            service = Service(chromedriver_path)
-            return webdriver.Chrome(service=service, options=options)
-        return None
+        # Full Chrome optimization
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--single-process")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--disable-images")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--window-size=1280,720")
+        
+        user_data_dir = tempfile.mkdtemp(prefix="chrome_", suffix="_profile")
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+        
+        try:
+            return webdriver.Chrome(options=chrome_options)
+        except Exception as e:
+            print(f"Full Chrome failed: {e}")
+            return None
 
     def read_email_from_file(self):
         """Read email address from email_info.txt file"""
@@ -268,6 +242,7 @@ class EmbyILRegistration:
             'email': email,
             'password': password,
             'success': success,
+            'browser_used': self.browser_type or 'Unknown',
             'url': 'https://client.embyiltv.io/sign-up',
             'note': 'Fixed password Aa123456! used for all registrations'
         }
@@ -287,80 +262,28 @@ class EmbyILRegistration:
         except Exception as e:
             print(f"❌ Failed to save signup info: {e}")
 
-    def check_registration_success(self):
-        """Advanced check for registration success"""
-        success_indicators = [
-            "success",
-            "confirm", 
-            "verify",
-            "email sent",
-            "check your email",
-            "הודעה נשלחה",
-            "בדוק את המייל",
-            "רישום בוצע בהצלחה"
-        ]
-        
-        error_indicators = [
-            "error",
-            "failed", 
-            "invalid",
-            "already exists",
-            "שגיאה",
-            "נכשל",
-            "כבר קיים"
-        ]
-        
-        try:
-            page_source = self.driver.page_source.lower()
-            current_url = self.driver.current_url
-            
-            print(f"🔍 Current URL: {current_url}")
-            
-            # Check for success indicators
-            for indicator in success_indicators:
-                if indicator in page_source:
-                    print(f"✅ Found success indicator: {indicator}")
-                    return True
-            
-            # Check URL change
-            if "sign-up" not in current_url and "register" not in current_url:
-                print("✅ URL changed - likely successful")
-                return True
-            
-            # Check for errors
-            for indicator in error_indicators:
-                if indicator in page_source:
-                    print(f"❌ Found error indicator: {indicator}")
-                    return False
-            
-            return True  # If no clear errors, consider it success
-            
-        except Exception as e:
-            print(f"⚠️ Error checking registration success: {e}")
-            return True  # Default to success if can't check
-
     def fill_registration_form(self, first_name, last_name, email, password, password_confirm):
         """Fill the registration form with provided details"""
         success = False
         
         try:
-            print("🌐 Navigating to registration page...")
+            print(f"🌐 Navigating to registration page using {self.browser_type}...")
             self.driver.get("https://client.embyiltv.io/sign-up")
 
-            wait = WebDriverWait(self.driver, 20)  # Increased timeout
-            time.sleep(5)  # Longer initial wait
+            wait = WebDriverWait(self.driver, 20)
+            time.sleep(5)
 
             # Take screenshot before filling
             self.driver.save_screenshot("signup_before_filling.png")
             print("📸 Screenshot saved: signup_before_filling.png")
 
-            # Field selectors - simplified for better compatibility
+            # Simplified field selectors
             field_selectors = {
                 'first_name': [
                     'input[name="firstName"]',
-                    'input[name="first_name"]', 
+                    'input[name="first_name"]',
                     'input[placeholder*="First"]',
-                    'input[type="text"]:nth-of-type(1)'
+                    'input[type="text"]:first-of-type'
                 ],
                 'last_name': [
                     'input[name="lastName"]',
@@ -371,8 +294,7 @@ class EmbyILRegistration:
                 'email': [
                     'input[name="email"]',
                     'input[type="email"]',
-                    'input[placeholder*="Email"]',
-                    'input[placeholder*="mail"]'
+                    'input[placeholder*="Email"]'
                 ],
                 'password': [
                     'input[name="password"]',
@@ -382,32 +304,30 @@ class EmbyILRegistration:
                 'password_confirm': [
                     'input[name="confirmPassword"]',
                     'input[name="password_confirmation"]',
-                    'input[placeholder*="Confirm"]',
                     'input[type="password"]:nth-of-type(2)'
                 ]
             }
 
-            # Fill all fields with more robust approach
+            # Fill fields
             fields_filled = 0
+            field_data = {
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': email,
+                'password': password,
+                'password_confirm': password_confirm
+            }
             
             for field_name, selectors in field_selectors.items():
-                field_value = locals().get(field_name.replace('_confirm', ''))
-                if field_name == 'password_confirm':
-                    field_value = password_confirm
-                    
                 element = self.find_element_by_selectors(selectors)
                 if element:
                     try:
-                        # Scroll to element first
                         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
                         time.sleep(1)
-                        
-                        # Clear and fill
                         element.clear()
                         time.sleep(0.5)
-                        element.send_keys(field_value)
+                        element.send_keys(field_data[field_name])
                         time.sleep(1)
-                        
                         print(f"✅ {field_name.replace('_', ' ').title()} filled successfully")
                         fields_filled += 1
                     except Exception as e:
@@ -421,16 +341,13 @@ class EmbyILRegistration:
             self.driver.save_screenshot("signup_before_submit.png")
             print("📸 Screenshot saved: signup_before_submit.png")
 
-            # Enhanced button finding with more wait time
+            # Find and click submit button
             print("🔘 Looking for submit button...")
-            time.sleep(3)  # Extra wait for dynamic content
+            time.sleep(3)
             
-            # Simplified button selectors
             button_selectors = [
                 'button[type="submit"]',
                 'input[type="submit"]',
-                'button:contains("Sign Up")',
-                'button:contains("Register")',
                 '.submit-button',
                 '.btn-submit',
                 '.btn-primary'
@@ -438,56 +355,30 @@ class EmbyILRegistration:
 
             submit_button = self.find_element_by_selectors(button_selectors)
 
-            # Click the button with enhanced error handling
             if submit_button:
                 try:
                     print("🎯 Attempting to click submit button...")
-                    
-                    # Scroll to button and wait
                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
                     time.sleep(2)
                     
-                    # Wait for it to be clickable
                     wait.until(EC.element_to_be_clickable(submit_button))
                     time.sleep(1)
                     
-                    # Try multiple click methods
-                    click_methods = [
-                        ("Regular click", lambda: submit_button.click()),
-                        ("JavaScript click", lambda: self.driver.execute_script("arguments[0].click();", submit_button)),
-                        ("Action click", lambda: webdriver.ActionChains(self.driver).click(submit_button).perform())
-                    ]
+                    # Try clicking
+                    submit_button.click()
+                    print("✅ Successfully clicked submit button")
                     
-                    clicked_successfully = False
-                    for method_name, click_method in click_methods:
-                        try:
-                            print(f"🔄 Trying {method_name}...")
-                            click_method()
-                            print(f"✅ Successfully clicked submit button using {method_name}")
-                            clicked_successfully = True
-                            break
-                        except Exception as e:
-                            print(f"❌ {method_name} failed: {e}")
-                            time.sleep(1)
+                    # Wait for response
+                    print("⏳ Waiting for response...")
+                    time.sleep(8)
                     
-                    if clicked_successfully:
-                        # Wait for response with longer timeout
-                        print("⏳ Waiting for response...")
-                        time.sleep(8)  # Longer wait
-                        
-                        # Take screenshot after submit
-                        self.driver.save_screenshot("signup_after_submit.png")
-                        print("📸 Screenshot saved: signup_after_submit.png")
-                        
-                        # Check registration success
-                        success = self.check_registration_success()
-                        
-                        if success:
-                            print("✅ Registration appears successful!")
-                        else:
-                            print("⚠️ Registration status unclear")
-                        
-                        print("📧 Check email for verification link!")
+                    # Take screenshot after submit
+                    self.driver.save_screenshot("signup_after_submit.png")
+                    print("📸 Screenshot saved: signup_after_submit.png")
+                    
+                    success = True
+                    print("✅ Registration submitted successfully!")
+                    print("📧 Check email for verification link!")
                     
                 except Exception as e:
                     print(f"❌ Failed to click submit button: {e}")
@@ -495,59 +386,36 @@ class EmbyILRegistration:
                 print("❌ No submit button found!")
                 self.driver.save_screenshot("signup_no_button_found.png")
                 
-            time.sleep(5)  # Final wait
+            time.sleep(5)
                 
         except Exception as e:
             print(f"❌ An error occurred during signup: {str(e)}")
             if self.driver:
                 self.driver.save_screenshot("signup_error_screenshot.png")
         
-        # Save signup information regardless of success
+        # Save signup information
         self.save_signup_info(first_name, last_name, email, password, success)
         return success
 
     def find_element_by_selectors(self, selectors):
-        """Try to find element using multiple selectors with better waiting"""
+        """Try to find element using multiple selectors"""
         for selector in selectors:
             try:
-                # Wait for element to be present
-                wait = WebDriverWait(self.driver, 10)
+                wait = WebDriverWait(self.driver, 5)
                 element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
                 
-                # Check if element is displayed and enabled
                 if element.is_displayed() and element.is_enabled():
                     return element
             except Exception:
                 continue
         return None
 
-    def fill_registration_form_with_retry(self, first_name, last_name, email, password, password_confirm, max_retries=2):
-        """Fill registration form with retry mechanism (reduced retries for stability)"""
-        for attempt in range(max_retries):
-            try:
-                print(f"🔄 Registration attempt {attempt + 1}/{max_retries}")
-                success = self.fill_registration_form(first_name, last_name, email, password, password_confirm)
-                
-                if success:
-                    return True
-                    
-                if attempt < max_retries - 1:
-                    print(f"⚠️ Attempt {attempt + 1} failed, retrying in 15 seconds...")
-                    time.sleep(15)  # Longer wait between retries
-                    
-            except Exception as e:
-                print(f"❌ Attempt {attempt + 1} failed with error: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(15)
-                
-        return False
-
     def close(self):
         """Close the browser"""
         if self.driver:
             try:
                 self.driver.quit()
-                print("🔒 Browser closed successfully")
+                print(f"🔒 {self.browser_type} browser closed successfully")
             except Exception as e:
                 print(f"⚠️ Error closing browser: {e}")
 
@@ -576,10 +444,11 @@ def main():
         print(f"📧 Email: {email}")
         print(f"👤 Name: {first_name} {last_name}")
         print(f"🔐 Password: {password}")
+        print(f"🌐 Browser: {bot.browser_type}")
         print()
         
-        # Perform registration with retry mechanism
-        success = bot.fill_registration_form_with_retry(
+        # Perform registration
+        success = bot.fill_registration_form(
             first_name=first_name,
             last_name=last_name,
             email=email,
@@ -593,7 +462,7 @@ def main():
             sys.exit(0)
         else:
             print("⚠️ Registration completed with warnings")
-            sys.exit(0)  # Don't fail the Jenkins job
+            sys.exit(0)
             
     except Exception as e:
         print(f"❌ Script failed: {str(e)}")
