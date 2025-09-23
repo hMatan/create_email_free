@@ -544,7 +544,7 @@ print(f'📧 Processing {len(filtered_messages)} matching messages...')
 # Process each message automatically (save all to JSON)
 for i, message in enumerate(filtered_messages, 1):
     message_id = message.get('id', f'unknown_{i}')
-    print(f'\n--- Processing Message {i}/{len(filtered_messages)} ---')
+    print(f'\\n--- Processing Message {i}/{len(filtered_messages)} ---')
     display_message_details(message, i)
     
     # Auto-save all message details
