@@ -21,6 +21,9 @@ pipeline {
         
         // Archive paths for artifacts
         ARTIFACTS_PATTERN = '*.txt,*.json,message_details_*.json,signup_*.json'
+        
+        // Set default action to run all steps automatically
+        APPROVAL_ACTION = 'FULL_PROCESS'
     }
     
     options {
@@ -41,11 +44,12 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 script {
-                    echo "🚀 Starting Complete Email & Signup Pipeline"
+                    echo "🚀 Starting Complete Email & Signup Pipeline (AUTOMATED)"
                     echo "📅 Build Date: ${new Date()}"
                     echo "🔢 Build Number: ${BUILD_NUMBER}"
                     echo "📂 Workspace: ${WORKSPACE_DIR}"
                     echo "🐳 Running in Jenkins Docker container"
+                    echo "🤖 Running in FULL AUTOMATED mode - no manual approval needed"
                 }
                 
                 // Clean up old files from previous runs
@@ -275,15 +279,15 @@ print(f'Python path: {sys.path}')
             }
         }
         
-        // 🛑 MANUAL APPROVAL STAGE - Pipeline pauses here
-        stage('⏸️ Manual Approval') {
+        // 🤖 AUTOMATED EXECUTION - No manual approval needed
+        stage('🤖 Automated Pipeline Execution') {
             steps {
                 script {
-                    echo "⏳ Waiting for manual approval to proceed..."
-                    echo "📧 Email created - ready for website signup and message processing"
-                    echo "🌐 The email will be used for automatic website signup in Step 2"
+                    echo "🤖 Starting automated pipeline execution..."
+                    echo "📧 Email created - proceeding automatically with website signup and message processing"
+                    echo "🚀 All steps will be executed automatically: signup + message processing"
                     
-                    // Display email info for user reference
+                    // Display email info for logging
                     if (fileExists("${env.TEMP_EMAIL_FILE}")) {
                         def emailInfo = readFile("${env.TEMP_EMAIL_FILE}")
                         echo "📋 Current Email Info:"
@@ -299,58 +303,24 @@ print(f'Python path: {sys.path}')
                             if (emailAddress && emailAddress != 'Not found') {
                                 echo "📧 ➤ Temporary email: ${emailAddress}"
                                 echo "🌐 ➤ This will be used for website signup in Step 2"
-                                echo "💌 ➤ After signup, you can send test emails to check Steps 3&4"
+                                echo "💌 ➤ After signup, system will automatically check for messages"
                             }
                         } catch (Exception e) {
                             echo "⚠️ Could not extract email address, check email_info.txt"
                         }
                     }
-                }
-                
-                // 🛑 This is where the pipeline PAUSES and waits for user input
-                script {
-                    def userInput = input(
-                        message: '📧 Ready to proceed with website signup and message processing?\n\n🌐 Step 2: Website signup with the temporary email\n📬 Steps 3&4: Check and process messages\n\nClick OK to continue.',
-                        ok: 'OK - Proceed with all steps',
-                        parameters: [
-                            choice(
-                                name: 'APPROVAL_ACTION',
-                                choices: ['FULL_PROCESS', 'SIGNUP_ONLY', 'SKIP_SIGNUP'],
-                                description: 'FULL_PROCESS: All steps | SIGNUP_ONLY: Steps 2 only | SKIP_SIGNUP: Steps 3&4 only'
-                            )
-                        ]
-                    )
                     
-                    // Store the user input for later use
-                    env.APPROVAL_ACTION = userInput
-                    
-                    echo "✅ Manual approval received!"
-                    echo "🎛️ Selected action: ${env.APPROVAL_ACTION}"
-                    
-                    if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                        echo "🚀 All steps will be executed: signup + message processing"
-                    } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
-                        echo "🌐 Only website signup will be performed"
-                    } else {
-                        echo "📬 Only message processing will be performed (no signup)"
-                    }
+                    echo "✅ Proceeding automatically with all pipeline steps!"
                 }
             }
         }
         
-        // 🌐 STEP 2: Website Signup
+        // 🌐 STEP 2: Website Signup (Always runs in automated mode)
         stage('Step 2: Website Signup') {
-            when {
-                // Run if user chose full process or signup only
-                expression {
-                    return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SIGNUP_ONLY']
-                }
-            }
-            
             steps {
                 script {
                     echo "🌐 Step 2: Automated website signup..."
-                    echo "✅ User approved website signup process"
+                    echo "🤖 Running automatically without manual intervention"
                 }
                 
                 sh '''
@@ -446,19 +416,12 @@ if not selenium_available:
             }
         }
         
-        // STEP 3: Check for New Messages
+        // STEP 3: Check for New Messages (Always runs in automated mode)
         stage('Step 3: Check for New Messages') {
-            when {
-                // Run if user chose full process or skip signup
-                expression {
-                    return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
-                }
-            }
-            
             steps {
                 script {
                     echo "🔍 Step 3: Checking for new messages..."
-                    echo "✅ Manual approval received - proceeding with message check"
+                    echo "🤖 Running automatically - proceeding with message check"
                 }
                 
                 sh '''
@@ -494,26 +457,20 @@ else:
             }
         }
         
-        // STEP 4: Get Message Details
+        // STEP 4: Get Message Details (Always runs if messages exist)
         stage('Step 4: Get Message Details') {
             when {
-                allOf {
-                    // Only run this stage if message_ids.txt exists and is not empty
-                    expression {
-                        return fileExists('message_ids.txt') && 
-                               sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
-                    }
-                    // Also check if user chose to get message details
-                    expression {
-                        return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
-                    }
+                // Only run this stage if message_ids.txt exists and is not empty
+                expression {
+                    return fileExists('message_ids.txt') && 
+                           sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
                 }
             }
             
             steps {
                 script {
                     echo "📖 Step 4: Getting detailed message information..."
-                    echo "✅ User approved proceeding with detailed message processing"
+                    echo "🤖 Running automatically - proceeding with detailed message processing"
                 }
                 
                 sh '''
@@ -580,12 +537,12 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
                     REPORT_FILE="build_${BUILD_NUMBER}_summary_${TIMESTAMP}.txt"
                     
-                    echo "=== BUILD ${BUILD_NUMBER} - COMPLETE PIPELINE SUMMARY ===" > "$REPORT_FILE"
+                    echo "=== BUILD ${BUILD_NUMBER} - AUTOMATED PIPELINE SUMMARY ===" > "$REPORT_FILE"
                     echo "Timestamp: ${TIMESTAMP}" >> "$REPORT_FILE"
                     echo "Build Date: $(date)" >> "$REPORT_FILE"
                     echo "Build Number: ${BUILD_NUMBER}" >> "$REPORT_FILE"
                     echo "Jenkins Job: ${JOB_NAME}" >> "$REPORT_FILE"
-                    echo "Manual Approval: ${APPROVAL_ACTION}" >> "$REPORT_FILE"
+                    echo "Execution Mode: FULLY AUTOMATED (No manual approval)" >> "$REPORT_FILE"
                     echo "Environment: Jenkins Docker Container" >> "$REPORT_FILE"
                     echo "" >> "$REPORT_FILE"
                     
@@ -670,7 +627,7 @@ except:
 " >> "$REPORT_FILE" 2>/dev/null || echo "Could not check dependencies" >> "$REPORT_FILE"
                     
                     echo "" >> "$REPORT_FILE"
-                    echo "=== END BUILD ${BUILD_NUMBER} SUMMARY ===" >> "$REPORT_FILE"
+                    echo "=== END BUILD ${BUILD_NUMBER} AUTOMATED SUMMARY ===" >> "$REPORT_FILE"
                     
                     echo "📄 Build summary report created: $REPORT_FILE"
                     cat "$REPORT_FILE"
@@ -688,7 +645,7 @@ except:
     post {
         always {
             script {
-                echo "🏁 Complete pipeline finished in Docker container"
+                echo "🏁 Complete automated pipeline finished in Docker container"
                 
                 // Clean up workspace but keep important files
                 sh '''
@@ -709,24 +666,17 @@ except:
         
         success {
             script {
-                echo "✅ Complete pipeline completed successfully in Docker container"
-                
-                if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                    echo "🎉 All steps completed: signup + message processing"
-                } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
-                    echo "🌐 Website signup completed, message processing was skipped"
-                } else {
-                    echo "📬 Message processing completed, signup was skipped"
-                }
-                
+                echo "✅ Complete automated pipeline completed successfully in Docker container"
+                echo "🎉 All steps completed automatically: signup + message processing"
                 echo "📊 Check archived artifacts for detailed results"
                 echo "🏷️ Build ${BUILD_NUMBER} artifacts are clearly labeled"
+                echo "🤖 Pipeline ran fully automated - no manual intervention was required"
             }
         }
         
         failure {
             script {
-                echo "❌ Pipeline failed in Docker container"
+                echo "❌ Automated pipeline failed in Docker container"
                 
                 // Try to capture more debug info
                 sh '''
@@ -748,13 +698,13 @@ except:
         
         unstable {
             script {
-                echo "⚠️ Pipeline completed with warnings"
+                echo "⚠️ Automated pipeline completed with warnings"
             }
         }
         
         aborted {
             script {
-                echo "🛑 Pipeline was aborted (possibly during manual approval)"
+                echo "🛑 Automated pipeline was aborted"
             }
         }
     }
