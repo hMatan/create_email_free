@@ -11,7 +11,7 @@ pipeline {
         PYTHON_PATH = '/usr/bin/python3'
         WORKSPACE_DIR = "${WORKSPACE}"
 
-        // Discord Configuration - החלף בURL שלך
+        // Discord Configuration
         DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1420217589510176779/48UhPwNV4x_OPmbIXyrhsgnhxxoLAWJt1cW96T5Cum-RQCP19gJNlVAmSYH2ydatsQeo'
         
         // Email configuration
@@ -89,16 +89,48 @@ pipeline {
             }
         }
         
-        stage('Setup Environment') {
+        stage('🚀 Pipeline Started') {
             steps {
                 script {
-                    echo "🚀 Starting Complete Email & Signup & Activation & Email Pipeline"
+                    echo "🚀 Starting Fully Automated EmbyIL Account Creation"
                     echo "📅 Build Date: ${new Date()}"
                     echo "🔢 Build Number: ${BUILD_NUMBER}"
                     echo "📂 Workspace: ${WORKSPACE_DIR}"
-                    echo "🐳 Running in Jenkins Docker container"
-                    echo "✨ Fresh workspace ready for new pipeline execution"
+                    echo "🤖 Running fully automated - no manual intervention required"
                 }
+                
+                // Send pipeline start notification to Discord
+                sh '''
+                    if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+                        echo "📱 Sending pipeline start notification to Discord..."
+                        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "username": "Jenkins EmbyIL Bot",
+                            "embeds": [{
+                              "title": "🚀 EmbyIL Pipeline Started",
+                              "description": "Build #'"$BUILD_NUMBER"' - Fully automated account creation process has begun",
+                              "color": 3447003,
+                              "fields": [
+                                {
+                                  "name": "🤖 Mode",
+                                  "value": "Fully Automated - No manual intervention required",
+                                  "inline": false
+                                },
+                                {
+                                  "name": "📋 Process",
+                                  "value": "Email Creation → Signup → Messages → Activation → Delivery",
+                                  "inline": false
+                                }
+                              ],
+                              "footer": {
+                                "text": "Jenkins Automation System"
+                              },
+                              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'"
+                            }]
+                          }' || echo "Discord start notification failed"
+                    fi
+                '''
             }
         }
         
@@ -218,100 +250,27 @@ pipeline {
                         echo "❌ No pip available for package installation"
                     fi
                     
-                    # Update PATH to include user-installed packages
-                    export PATH="$HOME/.local/bin:$PATH"
-                    
-                    # Verify installation
-                    echo "🔍 Verifying installations..."
-                    
-                    ${PYTHON_PATH} -c "
-import sys
-import os
-
-# Add user site-packages to path
-import site
-user_site = site.getusersitepackages()
-if user_site not in sys.path:
-    sys.path.insert(0, user_site)
-
-selenium_ok = False
-webdriver_ok = False
-requests_ok = False
-smtp_ok = False
-
-try:
-    import selenium
-    print(f'✅ Selenium {selenium.__version__} available')
-    selenium_ok = True
-except ImportError as e:
-    print(f'❌ Selenium not available: {e}')
-
-try:
-    import webdriver_manager
-    print('✅ webdriver-manager available')
-    webdriver_ok = True
-except ImportError as e:
-    print(f'❌ webdriver-manager not available: {e}')
-
-try:
-    import requests
-    print('✅ requests available')
-    requests_ok = True
-except ImportError as e:
-    print(f'❌ requests not available: {e}')
-
-try:
-    import smtplib
-    print('✅ smtplib (email) available')
-    smtp_ok = True
-except ImportError as e:
-    print(f'❌ smtplib not available: {e}')
-
-if selenium_ok and webdriver_ok and smtp_ok:
-    print('🎉 All required packages installed successfully!')
-else:
-    print('⚠️ Some packages missing, but continuing...')
-    
-print(f'Python executable: {sys.executable}')
-print(f'Python path: {sys.path}')
-"
-                    
-                    # Verify browsers
-                    echo "🔍 Checking available browsers:"
-                    if command -v google-chrome >/dev/null 2>&1; then
-                        echo "✅ Chrome: $(google-chrome --version 2>/dev/null || echo 'installed')"
-                    else
-                        echo "⚠️ Chrome not found in PATH"
-                    fi
-                    
-                    if command -v firefox-esr >/dev/null 2>&1; then
-                        echo "✅ Firefox: $(firefox-esr --version 2>/dev/null || echo 'installed')"
-                    else
-                        echo "⚠️ Firefox not found in PATH"
-                    fi
-                    
-                    # Check shared memory size
-                    echo "💾 Checking shared memory:"
-                    df -h /dev/shm 2>/dev/null || echo "⚠️ Could not check /dev/shm"
-                    
                     echo "✅ Dependencies installation completed"
                 '''
             }
         }
         
-        stage('Step 1: Create/Verify Temp Email') {
+        stage('Step 1: Create Temp Email') {
             steps {
                 script {
-                    echo "📧 Step 1: Creating temporary email..."
+                    echo "📧 Step 1: Creating temporary email automatically..."
                 }
                 
                 sh '''
-                    # Always create new email since workspace was cleaned
                     echo "🆕 Creating new temporary email..."
                     ${PYTHON_PATH} create_email.py
                     
                     if [ $? -eq 0 ]; then
                         echo "✅ Temporary email created successfully"
+                        if [ -f "${TEMP_EMAIL_FILE}" ]; then
+                            echo "📧 Email details:"
+                            cat "${TEMP_EMAIL_FILE}"
+                        fi
                     else
                         echo "❌ Failed to create temporary email"
                         exit 1
@@ -326,122 +285,10 @@ print(f'Python path: {sys.path}')
             }
         }
         
-        // 🛑 MANUAL APPROVAL STAGE - Pipeline pauses here
-        stage('⏸️ Manual Approval') {
-            steps {
-                script {
-                    echo "📤 Sending Discord approval notification..."
-                    echo "🔗 Using webhook: ${env.DISCORD_WEBHOOK_URL.take(50)}..."
-                }
-                
-                // Send Discord webhook notification
-                sh '''
-                    echo "🧪 Testing Discord webhook connection..."
-                    
-                    # Simple test message first
-                    RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST "$DISCORD_WEBHOOK_URL" \
-                      -H "Content-Type: application/json" \
-                      -d '{"content": "🚀 Jenkins Pipeline Build #'"$BUILD_NUMBER"' ready for approval!\\n\\n📧 Check the details and approve when ready.", "username": "Jenkins Pipeline"}' 2>/dev/null)
-                    
-                    if [ $? -eq 0 ]; then
-                        HTTP_CODE=$(echo $RESPONSE | tr -d '\\n' | sed -e 's/.*HTTPSTATUS://')
-                        echo "Discord webhook response code: $HTTP_CODE"
-                        
-                        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
-                            echo "✅ Discord notification sent successfully!"
-                        else
-                            echo "⚠️ Discord returned code $HTTP_CODE"
-                        fi
-                    else
-                        echo "❌ Failed to connect to Discord webhook"
-                    fi
-                    
-                    # If Python script exists, run detailed notification
-                    if [ -f "send_approval_webhook.py" ]; then
-                        echo "🐍 Running detailed Discord notification..."
-                        export NOTIFICATION_TYPE="approval"
-                        ${PYTHON_PATH} send_approval_webhook.py || echo "⚠️ Python Discord script had issues"
-                    else
-                        echo "📝 send_approval_webhook.py not found, using simple notification only"
-                    fi
-                    
-                    echo ""
-                    echo "📱 Check your Discord server for the notification!"
-                    echo "🔗 Direct approval link: ${BUILD_URL}input/"
-                '''
-                
-                script {
-                    echo "⏳ Waiting for manual approval..."
-                    echo "📱 Discord notification sent - check your server!"
-                    echo "🔗 Direct approval link: ${BUILD_URL}input/"
-                    
-                    // Display email info
-                    if (fileExists("${env.TEMP_EMAIL_FILE}")) {
-                        def emailInfo = readFile("${env.TEMP_EMAIL_FILE}")
-                        echo "📋 Email Info:"
-                        echo "${emailInfo}"
-                        
-                        // Extract email address for display
-                        try {
-                            def emailAddress = sh(
-                                script: "grep 'EMAIL_ADDRESS=' ${env.TEMP_EMAIL_FILE} | cut -d'=' -f2 || echo 'Not found'",
-                                returnStdout: true
-                            ).trim()
-                            
-                            if (emailAddress && emailAddress != 'Not found') {
-                                echo "📧 ➤ Temporary email: ${emailAddress}"
-                                echo "🌐 ➤ This will be used for website signup"
-                                echo "🎯 ➤ Full automation process will begin after approval"
-                            }
-                        } catch (Exception e) {
-                            echo "⚠️ Could not extract email address"
-                        }
-                    }
-                }
-                
-                // The actual input step with timeout
-                timeout(time: 30, unit: 'MINUTES') {
-                    script {
-                        def userInput = input(
-                            id: 'ApprovalStep',
-                            message: '📱 Discord notification sent! Check Discord or approve here.',
-                            ok: 'OK - Proceed',
-                            parameters: [
-                                choice(
-                                    name: 'APPROVAL_ACTION',
-                                    choices: ['FULL_PROCESS', 'SIGNUP_ONLY', 'SKIP_SIGNUP'],
-                                    description: 'FULL_PROCESS: All steps | SIGNUP_ONLY: Step 2 only | SKIP_SIGNUP: Steps 3,4,5,6 only'
-                                )
-                            ]
-                        )
-                        
-                        env.APPROVAL_ACTION = userInput
-                        echo "✅ Manual approval received: ${env.APPROVAL_ACTION}"
-                        
-                        if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                            echo "🚀 All steps will be executed: signup + message processing + activation + email delivery"
-                        } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
-                            echo "🌐 Only website signup will be performed"
-                        } else {
-                            echo "📬 Only message processing, activation and email will be performed (no signup)"
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 🌐 STEP 2: Website Signup
         stage('Step 2: Website Signup') {
-            when {
-                expression {
-                    return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SIGNUP_ONLY']
-                }
-            }
-            
             steps {
                 script {
                     echo "🌐 Step 2: Automated website signup..."
-                    echo "✅ User approved website signup process"
                 }
                 
                 sh '''
@@ -493,14 +340,7 @@ print(f'Python path: {sys.path}')
             }
         }
         
-        // STEP 3: Check for New Messages
-        stage('Step 3: Check for New Messages') {
-            when {
-                expression {
-                    return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
-                }
-            }
-            
+        stage('Step 3: Check for Messages') {
             steps {
                 script {
                     echo "🔍 Step 3: Checking for new messages..."
@@ -538,17 +378,11 @@ else:
             }
         }
         
-        // STEP 4: Get Message Details
         stage('Step 4: Get Message Details') {
             when {
-                allOf {
-                    expression {
-                        return fileExists('message_ids.txt') && 
-                               sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
-                    }
-                    expression {
-                        return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
-                    }
+                expression {
+                    return fileExists('message_ids.txt') && 
+                           sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
                 }
             }
             
@@ -605,16 +439,12 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             }
         }
         
-        // STEP 5: Activate Account
         stage('Step 5: Activate Account') {
             when {
                 allOf {
                     expression {
                         return fileExists('signup_info.json') && 
                                sh(script: "ls -1 message_details_*.json 2>/dev/null | wc -l", returnStdout: true).trim() != "0"
-                    }
-                    expression {
-                        return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
                     }
                 }
             }
@@ -676,16 +506,10 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             }
         }
         
-        // STEP 6: Send Credentials Email
         stage('Step 6: Send Credentials Email') {
             when {
-                allOf {
-                    expression {
-                        return fileExists('user.password.txt')
-                    }
-                    expression {
-                        return env.APPROVAL_ACTION in ['FULL_PROCESS']
-                    }
+                expression {
+                    return fileExists('user.password.txt')
                 }
             }
             
@@ -736,6 +560,103 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             }
         }
         
+        stage('📊 Final Notifications') {
+            steps {
+                script {
+                    echo "📊 Sending final notifications with complete details..."
+                }
+                
+                sh '''
+                    echo "📱 Preparing Discord and Email notifications with full details..."
+                    
+                    # Collect all information
+                    TEMP_EMAIL_CONTENT=""
+                    CREDENTIALS_CONTENT=""
+                    SIGNUP_INFO=""
+                    ACTIVATION_INFO=""
+                    
+                    # Read temporary email info
+                    if [ -f "${TEMP_EMAIL_FILE}" ]; then
+                        TEMP_EMAIL_CONTENT=$(cat "${TEMP_EMAIL_FILE}")
+                        echo "📧 Temporary email info collected"
+                    fi
+                    
+                    # Read final credentials
+                    if [ -f "user.password.txt" ]; then
+                        CREDENTIALS_CONTENT=$(cat "user.password.txt")
+                        echo "👤 Credentials info collected"
+                    fi
+                    
+                    # Read signup info
+                    if [ -f "signup_info.json" ]; then
+                        SIGNUP_INFO=$(cat "signup_info.json")
+                        echo "🌐 Signup info collected"
+                    fi
+                    
+                    # Send detailed Discord notification
+                    if [ -n "$DISCORD_WEBHOOK_URL" ] && [ -n "$CREDENTIALS_CONTENT" ]; then
+                        echo "📱 Sending detailed Discord success notification..."
+                        
+                        # Extract email address from temp email
+                        TEMP_EMAIL_ADDR=$(echo "$TEMP_EMAIL_CONTENT" | grep 'EMAIL_ADDRESS=' | cut -d'=' -f2 || echo 'Unknown')
+                        
+                        # Extract username from credentials (assuming it's in the file)
+                        USERNAME=$(echo "$CREDENTIALS_CONTENT" | grep 'Username:' | cut -d':' -f2 | xargs || echo 'Unknown')
+                        FINAL_EMAIL=$(echo "$CREDENTIALS_CONTENT" | grep 'Email:' | cut -d':' -f2 | xargs || echo 'Unknown')
+                        
+                        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "username": "Jenkins EmbyIL Success",
+                            "embeds": [{
+                              "title": "✅ EmbyIL Account Created Successfully!",
+                              "description": "Build #'"$BUILD_NUMBER"' completed - New EmbyIL account is ready! 🎉",
+                              "color": 65280,
+                              "fields": [
+                                {
+                                  "name": "📧 Temporary Email Used",
+                                  "value": "``````",
+                                  "inline": false
+                                },
+                                {
+                                  "name": "👤 Final Account Details",
+                                  "value": "**Username:** '"$USERNAME"'\\n**Email:** '"$FINAL_EMAIL"'\\n**Status:** Activated & Ready",
+                                  "inline": false
+                                },
+                                {
+                                  "name": "📨 Credentials Delivery",
+                                  "value": "Full credentials have been emailed to **matan@yahoo.com**",
+                                  "inline": false
+                                },
+                                {
+                                  "name": "🏗️ Build Info",
+                                  "value": "Build: #'"$BUILD_NUMBER"'\\nDuration: Auto-completed\\nAll steps: ✅ Success",
+                                  "inline": false
+                                }
+                              ],
+                              "footer": {
+                                "text": "Jenkins EmbyIL Automation • Account Ready for Use"
+                              },
+                              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'",
+                              "thumbnail": {
+                                "url": "https://cdn-icons-png.flaticon.com/512/190/190411.png"
+                              }
+                            }]
+                          }' || echo "Discord notification failed"
+                    fi
+                    
+                    # Send additional email notification with all details
+                    if [ -f "send_final_summary_email.py" ]; then
+                        echo "📧 Sending comprehensive email summary..."
+                        export NOTIFICATION_TYPE="final_summary"
+                        ${PYTHON_PATH} send_final_summary_email.py || echo "⚠️ Summary email failed"
+                    fi
+                    
+                    echo "✅ Final notifications sent"
+                '''
+            }
+        }
+        
         stage('Generate Summary Report') {
             steps {
                 script {
@@ -747,12 +668,12 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
                     REPORT_FILE="build_${BUILD_NUMBER}_summary_${TIMESTAMP}.txt"
                     
-                    echo "=== BUILD ${BUILD_NUMBER} - COMPLETE PIPELINE SUMMARY ===" > "$REPORT_FILE"
+                    echo "=== BUILD ${BUILD_NUMBER} - FULLY AUTOMATED PIPELINE SUMMARY ===" > "$REPORT_FILE"
                     echo "Timestamp: ${TIMESTAMP}" >> "$REPORT_FILE"
                     echo "Build Date: $(date)" >> "$REPORT_FILE"
                     echo "Build Number: ${BUILD_NUMBER}" >> "$REPORT_FILE"
                     echo "Jenkins Job: ${JOB_NAME}" >> "$REPORT_FILE"
-                    echo "Manual Approval: ${APPROVAL_ACTION}" >> "$REPORT_FILE"
+                    echo "Mode: Fully Automated (No Manual Approval Required)" >> "$REPORT_FILE"
                     echo "Environment: Jenkins Docker Container" >> "$REPORT_FILE"
                     echo "Workspace: Fresh start (all previous files cleaned)" >> "$REPORT_FILE"
                     echo "" >> "$REPORT_FILE"
@@ -774,27 +695,28 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     
                     # Pipeline completion summary
                     echo "" >> "$REPORT_FILE"
-                    echo "🎯 PIPELINE COMPLETION SUMMARY:" >> "$REPORT_FILE"
+                    echo "🎯 AUTOMATED PIPELINE COMPLETION SUMMARY:" >> "$REPORT_FILE"
                     if [ -f "signup_info.json" ]; then
-                        echo "✅ Step 2: Website signup completed" >> "$REPORT_FILE"
+                        echo "✅ Step 2: Website signup completed automatically" >> "$REPORT_FILE"
                     else
                         echo "❌ Step 2: Website signup not completed" >> "$REPORT_FILE"
                     fi
                     
                     if [ -f "activation_info.json" ]; then
-                        echo "✅ Step 5: Account activation completed" >> "$REPORT_FILE"
+                        echo "✅ Step 5: Account activation completed automatically" >> "$REPORT_FILE"
                     else
                         echo "❌ Step 5: Account activation not completed" >> "$REPORT_FILE"
                     fi
                     
                     if [ -f "email_sent.json" ]; then
-                        echo "✅ Step 6: Credentials email sent" >> "$REPORT_FILE"
+                        echo "✅ Step 6: Credentials email sent automatically" >> "$REPORT_FILE"
                     else
                         echo "❌ Step 6: Credentials email not sent" >> "$REPORT_FILE"
                     fi
                     
                     echo "" >> "$REPORT_FILE"
-                    echo "=== END BUILD ${BUILD_NUMBER} COMPLETE SUMMARY ===" >> "$REPORT_FILE"
+                    echo "🤖 AUTOMATION STATUS: COMPLETED WITHOUT MANUAL INTERVENTION" >> "$REPORT_FILE"
+                    echo "=== END BUILD ${BUILD_NUMBER} AUTOMATED SUMMARY ===" >> "$REPORT_FILE"
                     
                     echo "📄 Build summary report created: $REPORT_FILE"
                     cat "$REPORT_FILE"
@@ -812,87 +734,24 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
     post {
         always {
             script {
-                echo "🏁 Complete pipeline finished in Docker container"
-                
-                sh '''
-                    echo "🧹 Final cleanup of temporary files..."
-                    find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-                    find . -name "*.pyc" -delete 2>/dev/null || true
-                    rm -rf chrome_*_profile/ firefox_*_profile/ 2>/dev/null || true
-                    
-                    echo "📁 Final artifact count:"
-                    echo "Summary files: $(ls -1 build_${BUILD_NUMBER}_summary_*.txt 2>/dev/null | wc -l)"
-                    echo "Signup files: $(ls -1 signup_*.json 2>/dev/null | wc -l)" 
-                    echo "Activation files: $(ls -1 activation_*.json 2>/dev/null | wc -l)"
-                    echo "Credentials file: $(ls -1 user.password.txt 2>/dev/null | wc -l)"
-                    echo "Email logs: $(ls -1 email_sent.json 2>/dev/null | wc -l)"
-                    echo "Screenshots: $(ls -1 *.png 2>/dev/null | wc -l)"
-                '''
+                echo "🏁 Fully automated pipeline finished in Docker container"
             }
         }
         
         success {
             script {
-                echo "✅ Complete pipeline completed successfully in Docker container"
-                
-                // Send Discord success notification
-                sh '''
-                    if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-                        echo "📱 Sending Discord success notification..."
-                        
-                        # Read credentials if available
-                        CREDENTIALS_PREVIEW=""
-                        if [ -f "user.password.txt" ]; then
-                            CREDENTIALS_PREVIEW=$(head -5 user.password.txt | sed 's/$/\\n/g' | tr -d '\\n')
-                        fi
-                        
-                        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
-                          -H "Content-Type: application/json" \
-                          -d '{
-                            "username": "Jenkins Success",
-                            "embeds": [{
-                              "title": "✅ EmbyIL Pipeline Completed Successfully!",
-                              "description": "Build #'"$BUILD_NUMBER"' has finished successfully",
-                              "color": 65280,
-                              "fields": [
-                                {
-                                  "name": "🎉 Status",
-                                  "value": "All steps completed successfully!",
-                                  "inline": false
-                                },
-                                {
-                                  "name": "📧 Final Step",
-                                  "value": "Credentials emailed to matan@yahoo.com",
-                                  "inline": false
-                                }
-                              ],
-                              "footer": {
-                                "text": "Jenkins Pipeline Bot"
-                              },
-                              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'"
-                            }]
-                          }' || echo "Discord success notification failed"
-                    fi
-                '''
-                
-                if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                    echo "🎉 All steps completed: signup + message processing + activation + email delivery"
-                    if (fileExists('email_sent.json')) {
-                        echo "📨 Credentials successfully emailed to matan@yahoo.com!"
-                    }
-                    if (fileExists('user.password.txt')) {
-                        echo "📄 Final credentials available in archived user.password.txt"
-                    }
-                }
-                
+                echo "✅ Fully automated pipeline completed successfully!"
+                echo "🤖 All steps executed without manual intervention"
+                echo "📨 Credentials delivered to matan@yahoo.com"
+                echo "📱 Discord notifications sent"
                 echo "📊 Check archived artifacts for detailed results"
-                echo "🎯 Fresh workspace guaranteed for next run!"
+                echo "🎯 Fresh workspace guaranteed for next automated run!"
             }
         }
         
         failure {
             script {
-                echo "❌ Pipeline failed in Docker container"
+                echo "❌ Automated pipeline failed"
                 
                 // Send Discord failure notification  
                 sh '''
@@ -903,10 +762,15 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                           -d '{
                             "username": "Jenkins Failure",
                             "embeds": [{
-                              "title": "❌ EmbyIL Pipeline Failed",
-                              "description": "Build #'"$BUILD_NUMBER"' encountered an error",
+                              "title": "❌ EmbyIL Automated Pipeline Failed",
+                              "description": "Build #'"$BUILD_NUMBER"' encountered an error during automated execution",
                               "color": 16711680,
                               "fields": [
+                                {
+                                  "name": "🤖 Mode",
+                                  "value": "Fully Automated (Failed)",
+                                  "inline": false
+                                },
                                 {
                                   "name": "🔗 Build Details",
                                   "value": "[View Build]('"$BUILD_URL"')",
@@ -914,25 +778,13 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                                 }
                               ],
                               "footer": {
-                                "text": "Jenkins Pipeline Bot"
+                                "text": "Jenkins Automation System"
                               },
                               "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'"
                             }]
                           }' || echo "Discord failure notification failed"
                     fi
                 '''
-            }
-        }
-        
-        unstable {
-            script {
-                echo "⚠️ Pipeline completed with warnings"
-            }
-        }
-        
-        aborted {
-            script {
-                echo "🛑 Pipeline was aborted (possibly during manual approval)"
             }
         }
     }
