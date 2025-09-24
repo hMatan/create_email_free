@@ -79,7 +79,7 @@ pipeline {
                     echo ""
                     
                     # Verify clean state
-                    GENERATED_FILES=$(ls -1 *.txt *.json *.png 2>/dev/null | grep -v -E '\\.(py)$' | wc -l || echo 0)
+                    GENERATED_FILES=$(ls -1 *.txt *.json *.png 2>/dev/null | grep -v -E '\.(py)$' | wc -l || echo 0)
                     if [ "$GENERATED_FILES" -eq 0 ]; then
                         echo "🎉 Perfect! Workspace is completely clean for fresh start"
                     else
@@ -130,6 +130,33 @@ pipeline {
                             }]
                           }' || echo "Discord start notification failed"
                     fi
+                '''
+            }
+        }
+        
+        stage('📱 WhatsApp Start Notification') {
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp start notification..."
+                }
+                
+                sh '''
+                    echo "📤 Contacting WhatsApp service..."
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "start",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp start notification failed"
+                      
+                    echo "✅ WhatsApp start notification sent"
                 '''
             }
         }
@@ -741,9 +768,81 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
         success {
             script {
                 echo "✅ Fully automated pipeline completed successfully!"
+                
+                // Send WhatsApp success notification
+                sh '''
+                    echo "📱 Sending WhatsApp success notification..."
+                    
+                    # Prepare credentials data
+                    CREDENTIALS_JSON=""
+                    if [ -f "user.password.txt" ]; then
+                        echo "👤 Reading credentials for WhatsApp..."
+                        # Escape quotes and newlines for JSON
+                        CREDENTIALS_RAW=$(cat user.password.txt)
+                        CREDENTIALS_JSON=$(echo "$CREDENTIALS_RAW" | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+                    fi
+                    
+                    # Send WhatsApp notification
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "success",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "status": "completed",
+                        "credentials": "'$CREDENTIALS_JSON'",
+                        "timestamp": "'$(date -Iseconds)'"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp success notification failed"
+                      
+                    echo "✅ WhatsApp success notification sent"
+                '''
+                
+                // Keep Discord success notification
+                sh '''
+                    if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+                        echo "📱 Sending Discord success notification..."
+                        
+                        CREDENTIALS_PREVIEW=""
+                        if [ -f "user.password.txt" ]; then
+                            CREDENTIALS_PREVIEW=$(head -5 user.password.txt | sed 's/$/\\n/g' | tr -d '\\n')
+                        fi
+                        
+                        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "username": "Jenkins Success",
+                            "embeds": [{
+                              "title": "✅ EmbyIL Pipeline Completed Successfully!",
+                              "description": "Build #'"$BUILD_NUMBER"' has finished successfully",
+                              "color": 65280,
+                              "fields": [
+                                {
+                                  "name": "🎉 Status",
+                                  "value": "All steps completed successfully!",
+                                  "inline": false
+                                },
+                                {
+                                  "name": "📧 Final Step",
+                                  "value": "Credentials emailed to matan@yahoo.com",
+                                  "inline": false
+                                }
+                              ],
+                              "footer": {
+                                "text": "Jenkins Pipeline Bot"
+                              },
+                              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'"
+                            }]
+                          }' || echo "Discord success notification failed"
+                    fi
+                '''
+                
                 echo "🤖 All steps executed without manual intervention"
                 echo "📨 Credentials delivered to matan@yahoo.com"
-                echo "📱 Discord notifications sent"
+                echo "📱 WhatsApp and Discord notifications sent"
                 echo "📊 Check archived artifacts for detailed results"
                 echo "🎯 Fresh workspace guaranteed for next automated run!"
             }
@@ -753,7 +852,32 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             script {
                 echo "❌ Automated pipeline failed"
                 
-                // Send Discord failure notification  
+                // Send WhatsApp failure notification
+                sh '''
+                    echo "📱 Sending WhatsApp failure notification..."
+                    
+                    # Get basic error info
+                    FAILED_STAGE="${STAGE_NAME:-Unknown}"
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "failure",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "status": "failed",
+                        "message": "Pipeline failed at stage: '$FAILED_STAGE'",
+                        "timestamp": "'$(date -Iseconds)'"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp failure notification failed"
+                      
+                    echo "✅ WhatsApp failure notification sent"
+                '''
+                
+                // Keep Discord failure notification
                 sh '''
                     if [ -n "$DISCORD_WEBHOOK_URL" ]; then
                         echo "📱 Sending Discord failure notification..."
@@ -785,6 +909,18 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                           }' || echo "Discord failure notification failed"
                     fi
                 '''
+            }
+        }
+        
+        unstable {
+            script {
+                echo "⚠️ Pipeline completed with warnings"
+            }
+        }
+        
+        aborted {
+            script {
+                echo "🛑 Pipeline was aborted"
             }
         }
     }
