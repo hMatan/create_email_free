@@ -43,7 +43,7 @@ pipeline {
     }
     
     stages {
-    stage('🧹 Fresh Start Cleanup') {
+        { stage('🧹 Fresh Start Cleanup') {
     steps {
         script {
             echo "🧹 Ensuring fresh start by removing all generated files"
