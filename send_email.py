@@ -9,12 +9,19 @@ import sys
 
 class EmailSender:
     def __init__(self):
-        """Initialize email sender with Gmail SMTP settings"""
+        """Initialize email sender with environment variables"""
         self.smtp_server = "smtp.gmail.com"
         self.smtp_port = 587
-        self.sender_email = "your-email@gmail.com"  # צריך להחליף
-        self.sender_password = "your-app-password"   # צריך להחליף באפליקיישן פסוורד
+        
+        # Get credentials from environment variables or use defaults
+        self.sender_email = os.environ.get('GMAIL_SENDER', 'your-jenkins-email@gmail.com')
+        self.sender_password = os.environ.get('GMAIL_APP_PASSWORD', 'your-16-char-app-password')
         self.recipient_email = "matan@yahoo.com"
+        
+        print(f"📧 Email settings:")
+        print(f"   From: {self.sender_email}")
+        print(f"   To: {self.recipient_email}")
+        print(f"   SMTP: {self.smtp_server}:{self.smtp_port}")
     
     def send_credentials_email(self, credentials_file_path):
         """Send the credentials file via email"""
@@ -39,16 +46,19 @@ class EmailSender:
             # Email body
             body = f"""Hi Matan,
 
-Your EmbyIL account has been successfully created and activated!
+Your EmbyIL account has been successfully created and activated automatically by Jenkins!
 
 Here are your login credentials:
 
 {credentials_content}
 
-The credentials file is also attached to this email.
+The credentials file is also attached to this email for your convenience.
+
+This email was sent automatically by the Jenkins automation system.
 
 Best regards,
-Jenkins Automation System
+Jenkins EmbyIL Automation
+Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             """
             
             msg.attach(MIMEText(body, 'plain'))
@@ -66,9 +76,11 @@ Jenkins Automation System
             msg.attach(part)
             
             # Send email
-            print("📤 Connecting to SMTP server...")
+            print("📤 Connecting to Gmail SMTP server...")
             server = smtplib.SMTP(self.smtp_server, self.smtp_port)
             server.starttls()
+            
+            print("🔐 Authenticating with Gmail...")
             server.login(self.sender_email, self.sender_password)
             
             print("📨 Sending email...")
@@ -86,7 +98,8 @@ Jenkins Automation System
                 'recipient': self.recipient_email,
                 'sender': self.sender_email,
                 'file_sent': credentials_file_path,
-                'status': 'success'
+                'status': 'success',
+                'subject': f"EmbyIL Account Credentials - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
             }
             
             import json
@@ -97,6 +110,10 @@ Jenkins Automation System
             
         except Exception as e:
             print(f"❌ Failed to send email: {str(e)}")
+            print("💡 Common issues:")
+            print("   - Gmail App Password not set correctly")
+            print("   - 2-Factor Authentication not enabled on Gmail")
+            print("   - SMTP blocked by firewall")
             
             # Log the error
             log_info = {
@@ -128,6 +145,10 @@ def main():
             print("💡 Make sure Step 5 (Account Activation) completed successfully")
             sys.exit(1)
         
+        print("📄 Credentials file found, content:")
+        with open(credentials_file, 'r') as f:
+            print(f.read())
+        
         # Initialize email sender
         email_sender = EmailSender()
         
@@ -135,7 +156,7 @@ def main():
         success = email_sender.send_credentials_email(credentials_file)
         
         if success:
-            print("🎉 Credentials email sent successfully!")
+            print("🎉 Credentials email sent successfully to matan@yahoo.com!")
             sys.exit(0)
         else:
             print("⚠️ Failed to send credentials email")
