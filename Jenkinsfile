@@ -13,7 +13,7 @@ pipeline {
 
 
     // Discord Configuration 
-    DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1420211947349217351/X86emISiVuAazmH4LfKo5qXTPD_iMpFPHkaMMWhI0ue2TcV2CaKSxMLEJH5u416crexX'  // 
+    DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1420217589510176779/48UhPwNV4x_OPmbIXyrhsgnhxxoLAWJt1cW96T5Cum-RQCP19gJNlVAmSYH2ydatsQeo'
     
 
         
