@@ -8,7 +8,8 @@ class DiscordApprovalWebhook:
     def __init__(self, webhook_url):
         """Initialize Discord webhook sender"""
         self.webhook_url = webhook_url
-        if not self.webhook_url.startswith('https://discordapp.com/api/webhooks/'):
+        if not (self.webhook_url.startswith('https://discord.com/api/webhooks/') or 
+                self.webhook_url.startswith('https://discordapp.com/api/webhooks/')):
             raise ValueError("Invalid Discord webhook URL")
     
     def send_approval_request(self, build_number, build_url, email_info="Not available"):
@@ -28,12 +29,12 @@ class DiscordApprovalWebhook:
             
             # Create beautiful Discord embed
             payload = {
-                "username": "Jenkins Pipeline Bot",
+                "username": "Jenkins EmbyIL Bot",
                 "avatar_url": "https://www.jenkins.io/images/logos/jenkins/jenkins.png",
                 "embeds": [
                     {
                         "title": "🚀 EmbyIL Account Creation Pipeline",
-                        "description": f"**Build #{build_number}** requires your approval to proceed",
+                        "description": f"**Build #{build_number}** requires your approval to proceed with automatic account creation",
                         "color": 0x00ff00,  # Green color
                         "fields": [
                             {
@@ -42,23 +43,23 @@ class DiscordApprovalWebhook:
                                 "inline": False
                             },
                             {
-                                "name": "🎯 What will happen next:",
-                                "value": "🌐 **Website Signup** - Automatic registration\n📬 **Message Processing** - Check for emails\n🎯 **Account Activation** - Complete setup\n📨 **Email Delivery** - Send credentials to matan@yahoo.com",
+                                "name": "🎯 What will happen after approval:",
+                                "value": "🌐 **Website Signup** - Automatic registration with temp email\n📬 **Message Processing** - Monitor and extract emails\n🎯 **Account Activation** - Complete the setup process\n📨 **Email Delivery** - Send final credentials to matan@yahoo.com",
                                 "inline": False
                             },
                             {
                                 "name": "⏰ Time Limit",
-                                "value": "30 minutes",
+                                "value": "30 minutes to approve",
                                 "inline": True
                             },
                             {
                                 "name": "🏗️ Build Info",
-                                "value": f"Build: #{build_number}\nJob: EmbyIL Pipeline",
+                                "value": f"Build: #{build_number}\nJob: EmbyIL Pipeline\nStatus: Waiting for approval",
                                 "inline": True
                             }
                         ],
                         "footer": {
-                            "text": "Jenkins Automation System",
+                            "text": "Jenkins Automation System • EmbyIL Account Creator",
                             "icon_url": "https://www.jenkins.io/images/logos/jenkins/jenkins.png"
                         },
                         "timestamp": datetime.utcnow().isoformat(),
@@ -67,11 +68,11 @@ class DiscordApprovalWebhook:
                         }
                     },
                     {
-                        "title": "👆 Click Here to Approve",
-                        "description": f"**[🔗 APPROVE PIPELINE]({build_url}input/)**\n\n*Or copy this link:*\n`{build_url}input/`",
-                        "color": 0xff6b35,  # Orange color
+                        "title": "👆 Click Here to Approve Pipeline",
+                        "description": f"**[🔗 APPROVE PIPELINE NOW]({build_url}input/)**\n\n*Direct link for quick access:*\n`{build_url}input/`\n\n🔔 **Important:** You have 30 minutes to approve this pipeline before it times out.",
+                        "color": 0xff6b35,  # Orange color for urgency
                         "footer": {
-                            "text": "Click the link above to approve the pipeline"
+                            "text": "Click the link above to open Jenkins approval page"
                         }
                     }
                 ]
@@ -105,23 +106,42 @@ class DiscordApprovalWebhook:
             if success:
                 color = 0x00ff00  # Green
                 title = "✅ EmbyIL Pipeline Completed Successfully!"
-                description = f"Build #{build_number} has finished successfully"
+                description = f"Build #{build_number} has finished successfully! 🎉"
                 thumbnail_url = "https://cdn-icons-png.flaticon.com/512/190/190411.png"  # Success icon
+                fields = [
+                    {
+                        "name": "🎉 Success Status",
+                        "value": "All automation steps completed successfully!",
+                        "inline": False
+                    },
+                    {
+                        "name": "📧 Email Delivery",
+                        "value": "Final credentials have been emailed to matan@yahoo.com",
+                        "inline": False
+                    }
+                ]
             else:
                 color = 0xff0000  # Red
                 title = "❌ EmbyIL Pipeline Failed"
-                description = f"Build #{build_number} encountered an error"
+                description = f"Build #{build_number} encountered an error during execution"
                 thumbnail_url = "https://cdn-icons-png.flaticon.com/512/564/564619.png"  # Error icon
+                fields = [
+                    {
+                        "name": "❌ Error Status",
+                        "value": "Pipeline failed - check Jenkins logs for details",
+                        "inline": False
+                    }
+                ]
             
             payload = {
-                "username": "Jenkins Pipeline Bot",
+                "username": "Jenkins EmbyIL Bot",
                 "avatar_url": "https://www.jenkins.io/images/logos/jenkins/jenkins.png",
                 "embeds": [
                     {
                         "title": title,
                         "description": description,
                         "color": color,
-                        "fields": [
+                        "fields": fields + [
                             {
                                 "name": "🏗️ Build Info",
                                 "value": f"Build: #{build_number}\nJob: EmbyIL Pipeline",
@@ -129,7 +149,7 @@ class DiscordApprovalWebhook:
                             },
                             {
                                 "name": "🔗 Build Details", 
-                                "value": f"[View Build]({build_url})",
+                                "value": f"[View Full Build Log]({build_url})",
                                 "inline": True
                             }
                         ],
@@ -144,9 +164,14 @@ class DiscordApprovalWebhook:
                 ]
             }
             
-            if success and credentials_info:
+            # Add credentials preview if available
+            if success and credentials_info and len(credentials_info) > 0:
+                # Extract key info from credentials
+                lines = credentials_info.split('\n')[:6]  # First 6 lines only
+                preview = '\n'.join(lines)
+                
                 payload["embeds"][0]["fields"].insert(0, {
-                    "name": "👤 Final Credentials Created",
+                    "name": "👤 Account Created Successfully",
                     "value": f"``````",
                     "inline": False
                 })
@@ -166,8 +191,8 @@ class DiscordApprovalWebhook:
 
 def main():
     """Main function for Jenkins integration"""
-    print("📤 Starting Discord Approval Webhook")
-    print("=" * 50)
+    print("📤 Starting Discord Webhook Notification")
+    print("=" * 60)
     
     # Get parameters from environment variables
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
@@ -177,8 +202,12 @@ def main():
     
     if not webhook_url:
         print("❌ DISCORD_WEBHOOK_URL environment variable not set!")
-        print("💡 Set it in Jenkins pipeline environment")
+        print("💡 Make sure it's defined in Jenkins pipeline environment")
         sys.exit(1)
+    
+    print(f"🔗 Webhook URL: ...{webhook_url[-30:]}")
+    print(f"🏗️ Build Number: {build_number}")
+    print(f"📋 Notification Type: {notification_type}")
     
     # Read email info if available
     email_info = "Not available"
@@ -191,11 +220,19 @@ def main():
             print(f"⚠️ Could not read email info: {e}")
     
     # Initialize Discord webhook
-    discord_webhook = DiscordApprovalWebhook(webhook_url)
+    try:
+        discord_webhook = DiscordApprovalWebhook(webhook_url)
+    except ValueError as e:
+        print(f"❌ Invalid webhook URL: {e}")
+        sys.exit(1)
+    
+    success = False
     
     if notification_type == 'approval':
         # Send approval request
+        print("📤 Sending approval request notification...")
         success = discord_webhook.send_approval_request(build_number, build_url, email_info)
+        
     elif notification_type == 'completion':
         # Read credentials if available
         credentials_info = ""
@@ -203,24 +240,30 @@ def main():
             try:
                 with open('user.password.txt', 'r') as f:
                     credentials_info = f.read().strip()
+                print(f"👤 Found credentials info: {len(credentials_info)} characters")
             except Exception as e:
                 print(f"⚠️ Could not read credentials: {e}")
         
+        print("📤 Sending completion notification...")
         success = discord_webhook.send_completion_notification(
             build_number, 
             build_url, 
-            success=True, 
+            success=True,  # Can be parameterized later
             credentials_info=credentials_info
         )
+        
     else:
         print(f"❌ Unknown notification type: {notification_type}")
+        print("💡 Use NOTIFICATION_TYPE='approval' or 'completion'")
         sys.exit(1)
     
     if success:
         print("🎉 Discord notification sent successfully!")
+        print("📱 Check your Discord server for the message")
         sys.exit(0)
     else:
         print("⚠️ Discord notification failed")
+        print("💡 Check webhook URL and network connectivity")
         sys.exit(1)
 
 if __name__ == "__main__":
