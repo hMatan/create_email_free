@@ -10,6 +10,12 @@ pipeline {
         // Define workspace paths
         PYTHON_PATH = '/usr/bin/python3'
         WORKSPACE_DIR = "${WORKSPACE}"
+
+
+    // Discord Configuration 
+    DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1420211947349217351/X86emISiVuAazmH4LfKo5qXTPD_iMpFPHkaMMWhI0ue2TcV2CaKSxMLEJH5u416crexX'  // 
+    
+
         
         // Email configuration
         EMAIL_RECIPIENTS = 'matan@yahoo.com'
