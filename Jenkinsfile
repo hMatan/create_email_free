@@ -11,18 +11,15 @@ pipeline {
         PYTHON_PATH = '/usr/bin/python3'
         WORKSPACE_DIR = "${WORKSPACE}"
 
-
-    // Discord Configuration 
-    DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1420217589510176779/48UhPwNV4x_OPmbIXyrhsgnhxxoLAWJt1cW96T5Cum-RQCP19gJNlVAmSYH2ydatsQeo'
-    
-
+        // Discord Configuration - החלף בURL שלך
+        DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1420217589510176779/48UhPwNV4x_OPmbIXyrhsgnhxxoLAWJt1cW96T5Cum-RQCP19gJNlVAmSYH2ydatsQeo'
         
         // Email configuration
         EMAIL_RECIPIENTS = 'matan@yahoo.com'
-        GMAIL_SENDER = 'your-jenkins-email@gmail.com'    // צריך להחליף
-        GMAIL_APP_PASSWORD = 'your-16-char-app-password'  // צריך להחליף
+        GMAIL_SENDER = 'your-jenkins-email@gmail.com'
+        GMAIL_APP_PASSWORD = 'your-16-char-app-password'
         
-        // Temp email configuration
+        // File configurations
         TEMP_EMAIL_FILE = 'email_info.txt'
         MESSAGE_IDS_FILE = 'message_ids.txt'
         SIGNUP_FILE = 'signup_info.json'
@@ -30,21 +27,13 @@ pipeline {
         USER_CREDENTIALS_FILE = 'user.password.txt'
         EMAIL_LOG_FILE = 'email_sent.json'
         
-        // Archive paths for artifacts
         ARTIFACTS_PATTERN = '*.txt,*.json,message_details_*.json,signup_*.json,activation_*.json,user.password.txt,email_sent.json'
     }
     
     options {
-        // Keep builds for 30 days or max 50 builds
         buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '50'))
-        
-        // Set build timeout to 45 minutes (increased for activation step)
         timeout(time: 45, unit: 'MINUTES')
-        
-        // Disable concurrent builds
         disableConcurrentBuilds()
-        
-        // Add timestamps to console output
         timestamps()
     }
     
@@ -147,6 +136,11 @@ pipeline {
                     
                     if [ ! -f "send_email.py" ]; then
                         echo "❌ send_email.py not found!"
+                        exit 1
+                    fi
+                    
+                    if [ ! -f "send_approval_webhook.py" ]; then
+                        echo "❌ send_approval_webhook.py not found!"
                         exit 1
                     fi
                     
@@ -308,7 +302,7 @@ print(f'Python path: {sys.path}')
         stage('Step 1: Create/Verify Temp Email') {
             steps {
                 script {
-                    echo "📧 Step 1: Creating or verifying temporary email..."
+                    echo "📧 Step 1: Creating temporary email..."
                 }
                 
                 sh '''
@@ -336,19 +330,58 @@ print(f'Python path: {sys.path}')
         stage('⏸️ Manual Approval') {
             steps {
                 script {
-                    echo "⏳ Waiting for manual approval to proceed..."
-                    echo "📧 Email created - ready for complete automation process"
-                    echo "🌐 The email will be used for automatic website signup in Step 2"
-                    echo "🎯 After signup, messages will be processed and account activated automatically"
-                    echo "📨 Final credentials will be emailed to matan@yahoo.com"
+                    echo "📤 Sending Discord approval notification..."
+                    echo "🔗 Using webhook: ${env.DISCORD_WEBHOOK_URL.take(50)}..."
+                }
+                
+                // Send Discord webhook notification
+                sh '''
+                    echo "🧪 Testing Discord webhook connection..."
                     
-                    // Display email info for user reference
+                    # Simple test message first
+                    RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST "$DISCORD_WEBHOOK_URL" \
+                      -H "Content-Type: application/json" \
+                      -d '{"content": "🚀 Jenkins Pipeline Build #'"$BUILD_NUMBER"' ready for approval!\\n\\n📧 Check the details and approve when ready.", "username": "Jenkins Pipeline"}' 2>/dev/null)
+                    
+                    if [ $? -eq 0 ]; then
+                        HTTP_CODE=$(echo $RESPONSE | tr -d '\\n' | sed -e 's/.*HTTPSTATUS://')
+                        echo "Discord webhook response code: $HTTP_CODE"
+                        
+                        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+                            echo "✅ Discord notification sent successfully!"
+                        else
+                            echo "⚠️ Discord returned code $HTTP_CODE"
+                        fi
+                    else
+                        echo "❌ Failed to connect to Discord webhook"
+                    fi
+                    
+                    # If Python script exists, run detailed notification
+                    if [ -f "send_approval_webhook.py" ]; then
+                        echo "🐍 Running detailed Discord notification..."
+                        export NOTIFICATION_TYPE="approval"
+                        ${PYTHON_PATH} send_approval_webhook.py || echo "⚠️ Python Discord script had issues"
+                    else
+                        echo "📝 send_approval_webhook.py not found, using simple notification only"
+                    fi
+                    
+                    echo ""
+                    echo "📱 Check your Discord server for the notification!"
+                    echo "🔗 Direct approval link: ${BUILD_URL}input/"
+                '''
+                
+                script {
+                    echo "⏳ Waiting for manual approval..."
+                    echo "📱 Discord notification sent - check your server!"
+                    echo "🔗 Direct approval link: ${BUILD_URL}input/"
+                    
+                    // Display email info
                     if (fileExists("${env.TEMP_EMAIL_FILE}")) {
                         def emailInfo = readFile("${env.TEMP_EMAIL_FILE}")
-                        echo "📋 Current Email Info:"
+                        echo "📋 Email Info:"
                         echo "${emailInfo}"
                         
-                        // Extract and display email address
+                        // Extract email address for display
                         try {
                             def emailAddress = sh(
                                 script: "grep 'EMAIL_ADDRESS=' ${env.TEMP_EMAIL_FILE} | cut -d'=' -f2 || echo 'Not found'",
@@ -357,44 +390,41 @@ print(f'Python path: {sys.path}')
                             
                             if (emailAddress && emailAddress != 'Not found') {
                                 echo "📧 ➤ Temporary email: ${emailAddress}"
-                                echo "🌐 ➤ This will be used for website signup in Step 2"
-                                echo "💌 ➤ After signup, the system will check for messages"
-                                echo "🎯 ➤ If activation email is found, account will be activated automatically"
-                                echo "📄 ➤ Final credentials will be saved to user.password.txt"
-                                echo "📨 ➤ Credentials will be emailed to matan@yahoo.com"
+                                echo "🌐 ➤ This will be used for website signup"
+                                echo "🎯 ➤ Full automation process will begin after approval"
                             }
                         } catch (Exception e) {
-                            echo "⚠️ Could not extract email address, check email_info.txt"
+                            echo "⚠️ Could not extract email address"
                         }
                     }
                 }
                 
-                // 🛑 This is where the pipeline PAUSES and waits for user input
-                script {
-                    def userInput = input(
-                        message: '📧 Ready to proceed with complete automation?\n\n🌐 Step 2: Website signup\n📬 Steps 3&4: Check and process messages\n🎯 Step 5: Account activation\n📄 Step 6: Email credentials to matan@yahoo.com\n\nClick OK to continue.',
-                        ok: 'OK - Proceed with all steps',
-                        parameters: [
-                            choice(
-                                name: 'APPROVAL_ACTION',
-                                choices: ['FULL_PROCESS', 'SIGNUP_ONLY', 'SKIP_SIGNUP'],
-                                description: 'FULL_PROCESS: All steps including activation and email | SIGNUP_ONLY: Steps 2 only | SKIP_SIGNUP: Steps 3,4,5,6 only'
-                            )
-                        ]
-                    )
-                    
-                    // Store the user input for later use
-                    env.APPROVAL_ACTION = userInput
-                    
-                    echo "✅ Manual approval received!"
-                    echo "🎛️ Selected action: ${env.APPROVAL_ACTION}"
-                    
-                    if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
-                        echo "🚀 All steps will be executed: signup + message processing + activation + email delivery"
-                    } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
-                        echo "🌐 Only website signup will be performed"
-                    } else {
-                        echo "📬 Only message processing, activation and email will be performed (no signup)"
+                // The actual input step with timeout
+                timeout(time: 30, unit: 'MINUTES') {
+                    script {
+                        def userInput = input(
+                            id: 'ApprovalStep',
+                            message: '📱 Discord notification sent! Check Discord or approve here.',
+                            ok: 'OK - Proceed',
+                            parameters: [
+                                choice(
+                                    name: 'APPROVAL_ACTION',
+                                    choices: ['FULL_PROCESS', 'SIGNUP_ONLY', 'SKIP_SIGNUP'],
+                                    description: 'FULL_PROCESS: All steps | SIGNUP_ONLY: Step 2 only | SKIP_SIGNUP: Steps 3,4,5,6 only'
+                                )
+                            ]
+                        )
+                        
+                        env.APPROVAL_ACTION = userInput
+                        echo "✅ Manual approval received: ${env.APPROVAL_ACTION}"
+                        
+                        if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
+                            echo "🚀 All steps will be executed: signup + message processing + activation + email delivery"
+                        } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
+                            echo "🌐 Only website signup will be performed"
+                        } else {
+                            echo "📬 Only message processing, activation and email will be performed (no signup)"
+                        }
                     }
                 }
             }
@@ -403,7 +433,6 @@ print(f'Python path: {sys.path}')
         // 🌐 STEP 2: Website Signup
         stage('Step 2: Website Signup') {
             when {
-                // Run if user chose full process or signup only
                 expression {
                     return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SIGNUP_ONLY']
                 }
@@ -422,38 +451,6 @@ print(f'Python path: {sys.path}')
                     export PATH="$HOME/.local/bin:$PATH"
                     export PYTHONPATH="$HOME/.local/lib/python3.11/site-packages:$PYTHONPATH"
                     
-                    # Final dependency check
-                    echo "🔍 Final dependency check with updated PATH..."
-                    ${PYTHON_PATH} -c "
-import sys
-import site
-
-# Add user site-packages to path
-user_site = site.getusersitepackages()
-if user_site not in sys.path:
-    sys.path.insert(0, user_site)
-
-selenium_available = False
-try:
-    import selenium
-    from selenium import webdriver
-    print(f'✅ Selenium {selenium.__version__} ready')
-    selenium_available = True
-except ImportError as e:
-    print(f'❌ Selenium not available: {e}')
-
-try:
-    import webdriver_manager
-    print('✅ webdriver-manager ready')
-except ImportError as e:
-    print(f'❌ webdriver-manager not available: {e}')
-
-if not selenium_available:
-    print('⚠️ Selenium not available - website signup will fail')
-    print('💡 Check package installation logs above')
-    # Don't exit here, let the signup script handle the error
-"
-                    
                     # Verify we have the email file
                     if [ ! -f "${TEMP_EMAIL_FILE}" ]; then
                         echo "❌ No email file found for signup"
@@ -464,15 +461,8 @@ if not selenium_available:
                     EMAIL_ADDR=$(grep 'EMAIL_ADDRESS=' "${TEMP_EMAIL_FILE}" | cut -d'=' -f2 || echo 'Unknown')
                     echo "📧 Using email for signup: $EMAIL_ADDR"
                     
-                    # Check shared memory before running browsers
-                    echo "💾 Shared memory status before browser startup:"
-                    df -h /dev/shm 2>/dev/null || echo "⚠️ Could not check /dev/shm"
-                    
-                    # Run the signup automation with extended timeout and proper PATH
+                    # Run the signup automation
                     echo "🚀 Starting website signup automation..."
-                    export PATH="$HOME/.local/bin:$PATH"
-                    export PYTHONPATH="$HOME/.local/lib/python3.11/site-packages:$PYTHONPATH"
-                    
                     timeout 600s ${PYTHON_PATH} website_signup.py || {
                         SIGNUP_RESULT=$?
                         echo "⚠️ Website signup returned exit code: $SIGNUP_RESULT"
@@ -486,23 +476,18 @@ if not selenium_available:
                         echo "💡 Check logs and screenshots for details"
                     }
                     
-                    # Display signup info if file was created
+                    # Display signup info
                     if [ -f "signup_info.json" ]; then
                         echo "📋 Signup Details:"
                         cat signup_info.json | ${PYTHON_PATH} -m json.tool 2>/dev/null || cat signup_info.json
                     fi
                     
-                    # List all created files for debugging
-                    echo "📁 Files created during signup:"
-                    ls -la signup_*.png signup_*.json 2>/dev/null || echo "No signup files created"
-                    
-                    echo "✅ Website signup phase completed (check results above)"
+                    echo "✅ Website signup phase completed"
                 '''
             }
             
             post {
                 always {
-                    // Archive signup files and any screenshots
                     archiveArtifacts artifacts: "signup_*.json,signup_*.png", allowEmptyArchive: true
                 }
             }
@@ -511,7 +496,6 @@ if not selenium_available:
         // STEP 3: Check for New Messages
         stage('Step 3: Check for New Messages') {
             when {
-                // Run if user chose full process or skip signup
                 expression {
                     return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
                 }
@@ -520,12 +504,10 @@ if not selenium_available:
             steps {
                 script {
                     echo "🔍 Step 3: Checking for new messages..."
-                    echo "✅ Manual approval received - proceeding with message check"
                 }
                 
                 sh '''
                     echo "📬 Running message checker..."
-                    # Use timeout to prevent hanging and provide non-interactive input
                     timeout 300s ${PYTHON_PATH} -c "
 from check_messages import read_email_info, get_email_messages
 email_id, email_address = read_email_info()
@@ -560,12 +542,10 @@ else:
         stage('Step 4: Get Message Details') {
             when {
                 allOf {
-                    // Only run this stage if message_ids.txt exists and is not empty
                     expression {
                         return fileExists('message_ids.txt') && 
                                sh(script: "[ -s message_ids.txt ]", returnStatus: true) == 0
                     }
-                    // Also check if user chose to get message details
                     expression {
                         return env.APPROVAL_ACTION in ['FULL_PROCESS', 'SKIP_SIGNUP']
                     }
@@ -575,12 +555,10 @@ else:
             steps {
                 script {
                     echo "📖 Step 4: Getting detailed message information..."
-                    echo "✅ User approved proceeding with detailed message processing"
                 }
                 
                 sh '''
                     echo "🔍 Processing stored message IDs..."
-                    # Use timeout and provide automated input for the script
                     timeout 600s ${PYTHON_PATH} -c "
 from get_message_details import read_email_info, read_message_ids, get_all_messages, filter_messages_by_ids, display_message_details, save_message_details
 # Read necessary information
@@ -603,15 +581,12 @@ if not filtered_messages:
     print('📭 No matching messages found')
     exit(0)
 print(f'📧 Processing {len(filtered_messages)} matching messages...')
-# Process each message automatically (save all to JSON)
+# Process each message automatically
 for i, message in enumerate(filtered_messages, 1):
     message_id = message.get('id', f'unknown_{i}')
     print(f'\\n--- Processing Message {i}/{len(filtered_messages)} ---')
     display_message_details(message, i)
-    
-    # Auto-save all message details
     save_message_details(message_id, message)
-    
 print(f'✅ Processed all {len(filtered_messages)} messages')
 "
                     
@@ -625,7 +600,6 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             
             post {
                 success {
-                    // Archive all JSON files created
                     archiveArtifacts artifacts: "message_details_*.json", allowEmptyArchive: true
                 }
             }
@@ -635,7 +609,6 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
         stage('Step 5: Activate Account') {
             when {
                 allOf {
-                    // Only run if we have message details and signup was successful
                     expression {
                         return fileExists('signup_info.json') && 
                                sh(script: "ls -1 message_details_*.json 2>/dev/null | wc -l", returnStdout: true).trim() != "0"
@@ -649,73 +622,55 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             steps {
                 script {
                     echo "🎯 Step 5: Activating account with confirmation link..."
-                    echo "✅ Processing activation from email messages"
-                    echo "📧 This will complete the full account setup process"
                 }
                 
                 sh '''
                     echo "🔗 Running account activation..."
                     
-                    # Update PATH to include user-installed packages
+                    # Update PATH
                     export PATH="$HOME/.local/bin:$PATH"
                     export PYTHONPATH="$HOME/.local/lib/python3.11/site-packages:$PYTHONPATH"
                     
                     # Check prerequisites
-                    echo "🔍 Checking activation prerequisites..."
-                    
                     if [ ! -f "signup_info.json" ]; then
-                        echo "❌ No signup_info.json found - cannot proceed with activation"
+                        echo "❌ No signup_info.json found"
                         exit 1
                     fi
                     
                     MESSAGE_COUNT=$(ls -1 message_details_*.json 2>/dev/null | wc -l)
                     if [ $MESSAGE_COUNT -eq 0 ]; then
-                        echo "❌ No message details found - cannot find activation link"
+                        echo "❌ No message details found"
                         exit 1
                     fi
                     
                     echo "✅ Found signup info and $MESSAGE_COUNT message files"
                     
-                    # Run the activation script with timeout
+                    # Run activation
                     echo "🚀 Starting account activation..."
                     timeout 600s ${PYTHON_PATH} activate_account.py || {
                         ACTIVATION_RESULT=$?
                         echo "⚠️ Account activation returned exit code: $ACTIVATION_RESULT"
                         
                         if [ $ACTIVATION_RESULT -eq 124 ]; then
-                            echo "⏰ Account activation timed out (10 minutes)"
+                            echo "⏰ Account activation timed out"
                         elif [ $ACTIVATION_RESULT -eq 1 ]; then
                             echo "🔧 Activation failed - check logs and screenshots"
-                            echo "💡 Common issues: activation link not found, browser problems, or form changes"
                         fi
-                        
-                        echo "💡 Check activation screenshots for details"
                     }
                     
-                    # Display activation info if file was created
-                    if [ -f "activation_info.json" ]; then
-                        echo "📋 Activation Details:"
-                        cat activation_info.json | ${PYTHON_PATH} -m json.tool 2>/dev/null || cat activation_info.json
-                    fi
-                    
-                    # Display user credentials if file was created
+                    # Display results
                     if [ -f "user.password.txt" ]; then
                         echo ""
                         echo "👤 FINAL USER CREDENTIALS:"
                         cat user.password.txt
                     fi
                     
-                    # List all created files
-                    echo "📁 Files created during activation:"
-                    ls -la activation_*.png activation_*.json user.password.txt 2>/dev/null || echo "No activation files created"
-                    
-                    echo "✅ Account activation phase completed (check results above)"
+                    echo "✅ Account activation phase completed"
                 '''
             }
             
             post {
                 always {
-                    // Archive activation files including user credentials
                     archiveArtifacts artifacts: "activation_*.png,activation_*.json,user.password.txt", allowEmptyArchive: true
                 }
             }
@@ -725,7 +680,6 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
         stage('Step 6: Send Credentials Email') {
             when {
                 allOf {
-                    // Only run if we have user credentials file
                     expression {
                         return fileExists('user.password.txt')
                     }
@@ -738,15 +692,13 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
             steps {
                 script {
                     echo "📧 Step 6: Sending credentials email to matan@yahoo.com..."
-                    echo "✅ Final step - delivering account credentials via email"
                 }
                 
                 sh '''
                     echo "📨 Preparing to send credentials email..."
                     
-                    # Check prerequisites
                     if [ ! -f "user.password.txt" ]; then
-                        echo "❌ No user.password.txt found - cannot send email"
+                        echo "❌ No user.password.txt found"
                         exit 1
                     fi
                     
@@ -754,35 +706,31 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                     cat user.password.txt
                     echo ""
                     
-                    # Run the email sender script
+                    # Run email sender
                     echo "🚀 Starting email delivery..."
                     timeout 120s ${PYTHON_PATH} send_email.py || {
                         EMAIL_RESULT=$?
                         echo "⚠️ Email sending returned exit code: $EMAIL_RESULT"
                         
                         if [ $EMAIL_RESULT -eq 124 ]; then
-                            echo "⏰ Email sending timed out (2 minutes)"
+                            echo "⏰ Email sending timed out"
                         elif [ $EMAIL_RESULT -eq 1 ]; then
-                            echo "🔧 Email sending failed - check SMTP configuration"
-                            echo "💡 Make sure Gmail app password is configured correctly"
+                            echo "🔧 Email sending failed"
                         fi
-                        
-                        echo "💡 Check email logs for details"
                     }
                     
-                    # Display email sending info if file was created
+                    # Display email info
                     if [ -f "email_sent.json" ]; then
                         echo "📋 Email Sending Details:"
                         cat email_sent.json | ${PYTHON_PATH} -m json.tool 2>/dev/null || cat email_sent.json
                     fi
                     
-                    echo "✅ Email sending phase completed (check results above)"
+                    echo "✅ Email sending phase completed"
                 '''
             }
             
             post {
                 always {
-                    // Archive email logs
                     archiveArtifacts artifacts: "email_sent.json", allowEmptyArchive: true
                 }
             }
@@ -795,7 +743,7 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                 }
                 
                 sh '''
-                    # Create a comprehensive summary report with build number
+                    # Create comprehensive summary report
                     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
                     REPORT_FILE="build_${BUILD_NUMBER}_summary_${TIMESTAMP}.txt"
                     
@@ -816,133 +764,21 @@ print(f'✅ Processed all {len(filtered_messages)} messages')
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Signup information (step 2)
-                    if [ -f "signup_info.json" ]; then
-                        echo "" >> "$REPORT_FILE"
-                        echo "🌐 WEBSITE SIGNUP INFORMATION (Step 2):" >> "$REPORT_FILE"
-                        cat signup_info.json >> "$REPORT_FILE" 2>/dev/null || echo "Could not read signup info"
-                        echo "" >> "$REPORT_FILE"
-                    fi
-                    
-                    # Message count (step 3)
-                    if [ -f "${MESSAGE_IDS_FILE}" ]; then
-                        MSG_COUNT=$(grep -c "MESSAGE_ID=" "${MESSAGE_IDS_FILE}" || echo "0")
-                        echo "📬 TOTAL MESSAGES PROCESSED (Step 3): $MSG_COUNT" >> "$REPORT_FILE"
-                        echo "" >> "$REPORT_FILE"
-                    fi
-                    
-                    # Detailed message files (step 4)
-                    DETAIL_COUNT=$(ls -1 message_details_*.json 2>/dev/null | wc -l)
-                    echo "📖 DETAILED MESSAGE FILES CREATED (Step 4): $DETAIL_COUNT" >> "$REPORT_FILE"
-                    
-                    if [ $DETAIL_COUNT -gt 0 ]; then
-                        echo "" >> "$REPORT_FILE"
-                        echo "📄 DETAILED MESSAGE FILES:" >> "$REPORT_FILE"
-                        ls -la message_details_*.json >> "$REPORT_FILE" 2>/dev/null || true
-                    fi
-                    
-                    # Activation information (step 5)
-                    if [ -f "activation_info.json" ]; then
-                        echo "" >> "$REPORT_FILE"
-                        echo "🎯 ACCOUNT ACTIVATION INFORMATION (Step 5):" >> "$REPORT_FILE"
-                        cat activation_info.json >> "$REPORT_FILE" 2>/dev/null || echo "Could not read activation info"
-                        echo "" >> "$REPORT_FILE"
-                    fi
-                    
-                    # Final credentials (step 5)
+                    # Final credentials
                     if [ -f "user.password.txt" ]; then
                         echo "" >> "$REPORT_FILE"
                         echo "👤 FINAL USER CREDENTIALS:" >> "$REPORT_FILE"
-                        cat user.password.txt >> "$REPORT_FILE" 2>/dev/null || echo "Could not read user credentials"
+                        cat user.password.txt >> "$REPORT_FILE"
                         echo "" >> "$REPORT_FILE"
                     fi
                     
-                    # Email sending information (step 6)
-                    if [ -f "email_sent.json" ]; then
-                        echo "" >> "$REPORT_FILE"
-                        echo "📨 EMAIL DELIVERY INFORMATION (Step 6):" >> "$REPORT_FILE"
-                        cat email_sent.json >> "$REPORT_FILE" 2>/dev/null || echo "Could not read email info"
-                        echo "" >> "$REPORT_FILE"
-                    fi
-                    
-                    # Screenshots info
-                    SCREENSHOT_COUNT=$(ls -1 *.png 2>/dev/null | wc -l)
-                    if [ $SCREENSHOT_COUNT -gt 0 ]; then
-                        echo "" >> "$REPORT_FILE"
-                        echo "📸 SCREENSHOTS CAPTURED: $SCREENSHOT_COUNT" >> "$REPORT_FILE"
-                        echo "Signup screenshots: $(ls -1 signup_*.png 2>/dev/null | wc -l)" >> "$REPORT_FILE"
-                        echo "Activation screenshots: $(ls -1 activation_*.png 2>/dev/null | wc -l)" >> "$REPORT_FILE"
-                        echo "" >> "$REPORT_FILE"
-                        echo "📸 SCREENSHOT FILES:" >> "$REPORT_FILE"
-                        ls -la *.png >> "$REPORT_FILE" 2>/dev/null || true
-                    fi
-                    
-                    # Environment info
-                    echo "" >> "$REPORT_FILE"
-                    echo "🐳 DOCKER CONTAINER INFO:" >> "$REPORT_FILE"
-                    echo "Python: $(${PYTHON_PATH} --version 2>/dev/null || echo 'Not available')" >> "$REPORT_FILE"
-                    echo "Chrome: $(google-chrome --version 2>/dev/null || echo 'Not available')" >> "$REPORT_FILE"
-                    echo "Firefox: $(firefox-esr --version 2>/dev/null || echo 'Not available')" >> "$REPORT_FILE"
-                    echo "Shared Memory: $(df -h /dev/shm 2>/dev/null | tail -1 || echo 'Not available')" >> "$REPORT_FILE"
-                    
-                    # Dependency info
-                    echo "" >> "$REPORT_FILE"
-                    echo "🔧 PYTHON DEPENDENCIES:" >> "$REPORT_FILE"
-                    export PATH="$HOME/.local/bin:$PATH"
-                    export PYTHONPATH="$HOME/.local/lib/python3.11/site-packages:$PYTHONPATH"
-                    ${PYTHON_PATH} -c "
-import sys
-import site
-
-# Add user site-packages to path
-user_site = site.getusersitepackages()
-if user_site not in sys.path:
-    sys.path.insert(0, user_site)
-
-try:
-    import selenium
-    print(f'✅ Selenium: {selenium.__version__}')
-except:
-    print('❌ Selenium: Not available')
-    
-try:
-    import webdriver_manager
-    print('✅ webdriver-manager: Available')
-except:
-    print('❌ webdriver-manager: Not available')
-
-try:
-    import requests
-    print('✅ requests: Available')
-except:
-    print('❌ requests: Not available')
-
-try:
-    import smtplib
-    print('✅ smtplib (email): Available')
-except:
-    print('❌ smtplib: Not available')
-" >> "$REPORT_FILE" 2>/dev/null || echo "Could not check dependencies" >> "$REPORT_FILE"
-                    
-                    # Final summary
+                    # Pipeline completion summary
                     echo "" >> "$REPORT_FILE"
                     echo "🎯 PIPELINE COMPLETION SUMMARY:" >> "$REPORT_FILE"
                     if [ -f "signup_info.json" ]; then
                         echo "✅ Step 2: Website signup completed" >> "$REPORT_FILE"
                     else
                         echo "❌ Step 2: Website signup not completed" >> "$REPORT_FILE"
-                    fi
-                    
-                    if [ -f "${MESSAGE_IDS_FILE}" ]; then
-                        echo "✅ Step 3: Message check completed" >> "$REPORT_FILE"
-                    else
-                        echo "❌ Step 3: Message check not completed" >> "$REPORT_FILE"
-                    fi
-                    
-                    if [ $DETAIL_COUNT -gt 0 ]; then
-                        echo "✅ Step 4: Message details processed ($DETAIL_COUNT files)" >> "$REPORT_FILE"
-                    else
-                        echo "❌ Step 4: No message details processed" >> "$REPORT_FILE"
                     fi
                     
                     if [ -f "activation_info.json" ]; then
@@ -978,22 +814,16 @@ except:
             script {
                 echo "🏁 Complete pipeline finished in Docker container"
                 
-                // Clean up workspace but keep important files
                 sh '''
                     echo "🧹 Final cleanup of temporary files..."
-                    # Remove Python cache files only
                     find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
                     find . -name "*.pyc" -delete 2>/dev/null || true
-                    
-                    # Remove temporary browser profiles
                     rm -rf chrome_*_profile/ firefox_*_profile/ 2>/dev/null || true
                     
-                    # Keep all generated artifacts for this build
                     echo "📁 Final artifact count:"
                     echo "Summary files: $(ls -1 build_${BUILD_NUMBER}_summary_*.txt 2>/dev/null | wc -l)"
                     echo "Signup files: $(ls -1 signup_*.json 2>/dev/null | wc -l)" 
                     echo "Activation files: $(ls -1 activation_*.json 2>/dev/null | wc -l)"
-                    echo "Message files: $(ls -1 message_details_*.json 2>/dev/null | wc -l)"
                     echo "Credentials file: $(ls -1 user.password.txt 2>/dev/null | wc -l)"
                     echo "Email logs: $(ls -1 email_sent.json 2>/dev/null | wc -l)"
                     echo "Screenshots: $(ls -1 *.png 2>/dev/null | wc -l)"
@@ -1005,6 +835,46 @@ except:
             script {
                 echo "✅ Complete pipeline completed successfully in Docker container"
                 
+                // Send Discord success notification
+                sh '''
+                    if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+                        echo "📱 Sending Discord success notification..."
+                        
+                        # Read credentials if available
+                        CREDENTIALS_PREVIEW=""
+                        if [ -f "user.password.txt" ]; then
+                            CREDENTIALS_PREVIEW=$(head -5 user.password.txt | sed 's/$/\\n/g' | tr -d '\\n')
+                        fi
+                        
+                        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "username": "Jenkins Success",
+                            "embeds": [{
+                              "title": "✅ EmbyIL Pipeline Completed Successfully!",
+                              "description": "Build #'"$BUILD_NUMBER"' has finished successfully",
+                              "color": 65280,
+                              "fields": [
+                                {
+                                  "name": "🎉 Status",
+                                  "value": "All steps completed successfully!",
+                                  "inline": false
+                                },
+                                {
+                                  "name": "📧 Final Step",
+                                  "value": "Credentials emailed to matan@yahoo.com",
+                                  "inline": false
+                                }
+                              ],
+                              "footer": {
+                                "text": "Jenkins Pipeline Bot"
+                              },
+                              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'"
+                            }]
+                          }' || echo "Discord success notification failed"
+                    fi
+                '''
+                
                 if (env.APPROVAL_ACTION == 'FULL_PROCESS') {
                     echo "🎉 All steps completed: signup + message processing + activation + email delivery"
                     if (fileExists('email_sent.json')) {
@@ -1013,14 +883,9 @@ except:
                     if (fileExists('user.password.txt')) {
                         echo "📄 Final credentials available in archived user.password.txt"
                     }
-                } else if (env.APPROVAL_ACTION == 'SIGNUP_ONLY') {
-                    echo "🌐 Website signup completed, message processing and activation were skipped"
-                } else {
-                    echo "📬 Message processing and activation completed, signup was skipped"
                 }
                 
                 echo "📊 Check archived artifacts for detailed results"
-                echo "🏷️ Build ${BUILD_NUMBER} artifacts are clearly labeled"
                 echo "🎯 Fresh workspace guaranteed for next run!"
             }
         }
@@ -1029,22 +894,33 @@ except:
             script {
                 echo "❌ Pipeline failed in Docker container"
                 
-                // Try to capture more debug info
+                // Send Discord failure notification  
                 sh '''
-                    echo "🔍 Debug information:"
-                    echo "Python version: $(${PYTHON_PATH} --version 2>&1 || echo 'Python not found')"
-                    echo "Container environment info:"
-                    cat /etc/os-release 2>/dev/null || echo "OS info not available"
-                    echo "PATH: $PATH"
-                    echo "HOME: $HOME"
-                    echo "User: $(whoami)"
-                    echo "Shared memory: $(df -h /dev/shm 2>/dev/null || echo 'Not available')"
-                    echo "Memory info: $(free -h 2>/dev/null || echo 'Not available')"
-                    echo "Chrome version: $(google-chrome --version 2>/dev/null || echo 'Chrome not available')"
-                    echo "Firefox version: $(firefox-esr --version 2>/dev/null || echo 'Firefox not available')"
-                    echo "Current directory contents:"
-                    ls -la
-                ''' 
+                    if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+                        echo "📱 Sending Discord failure notification..."
+                        curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "username": "Jenkins Failure",
+                            "embeds": [{
+                              "title": "❌ EmbyIL Pipeline Failed",
+                              "description": "Build #'"$BUILD_NUMBER"' encountered an error",
+                              "color": 16711680,
+                              "fields": [
+                                {
+                                  "name": "🔗 Build Details",
+                                  "value": "[View Build]('"$BUILD_URL"')",
+                                  "inline": false
+                                }
+                              ],
+                              "footer": {
+                                "text": "Jenkins Pipeline Bot"
+                              },
+                              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'"
+                            }]
+                          }' || echo "Discord failure notification failed"
+                    fi
+                '''
             }
         }
         
