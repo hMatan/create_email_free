@@ -8,7 +8,7 @@ class DiscordApprovalWebhook:
     def __init__(self, webhook_url):
         """Initialize Discord webhook sender"""
         self.webhook_url = webhook_url
-        if not self.webhook_url.startswith('https://discord.com/api/webhooks/'):
+        if not self.webhook_url.startswith('https://discordapp.com/api/webhooks/'):
             raise ValueError("Invalid Discord webhook URL")
     
     def send_approval_request(self, build_number, build_url, email_info="Not available"):
