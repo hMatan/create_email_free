@@ -79,12 +79,13 @@ pipeline {
                     echo ""
                     
                     # Verify clean state
-                    GENERATED_FILES=$(ls -1 *.txt *.json *.png 2>/dev/null | grep -v -E '\.(py)$' | wc -l || echo 0)
-                    if [ "$GENERATED_FILES" -eq 0 ]; then
-                        echo "🎉 Perfect! Workspace is completely clean for fresh start"
-                    else
-                        echo "⚠️ Some generated files still exist - will be overwritten"
-                    fi
+GENERATED_FILES=$(ls -1 *.txt *.json *.png 2>/dev/null | grep -v -E '\\.(py)$' | wc -l || echo 0)
+if [ "$GENERATED_FILES" -eq 0 ]; then
+    echo "🎉 Perfect! Workspace is completely clean for fresh start"
+else
+    echo "⚠️ Some generated files still exist - will be overwritten"
+fi
+
                 '''
             }
         }
