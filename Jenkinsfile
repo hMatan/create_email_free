@@ -42,7 +42,7 @@ pipeline {
         timestamps()
     }
     
-    stages 
+    stages {
     stage('🧹 Fresh Start Cleanup') {
     steps {
         script {
