@@ -144,7 +144,7 @@ fi
                 sh '''
                     echo "📤 Contacting WhatsApp service..."
                     
-                    curl -X POST http://localhost:3000/webhook/jenkins \
+                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "start",
