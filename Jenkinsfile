@@ -135,47 +135,7 @@ fi
             }
         }
 
-        stage('🔑 SSH Git Setup') {
-    steps {
-        script {
-            echo "🔑 Configuring SSH for private repository access..."
-        }
-        
-        sh '''
-            echo "🔧 Setting up SSH configuration for Git..."
-            
-            # Ensure SSH directory exists
-            mkdir -p ~/.ssh
-            chmod 700 ~/.ssh
-            
-            # Add GitHub to known_hosts if not already there
-            if ! grep -q "github.com" ~/.ssh/known_hosts 2>/dev/null; then
-                echo "📝 Adding GitHub to known_hosts..."
-                ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-            fi
-            
-            # Set proper permissions
-            if [ -f ~/.ssh/id_rsa ]; then
-                chmod 600 ~/.ssh/id_rsa
-                chmod 644 ~/.ssh/id_rsa.pub
-                echo "✅ SSH key permissions set correctly"
-            else
-                echo "⚠️ SSH key not found at ~/.ssh/id_rsa"
-            fi
-            
-            # Test GitHub connection
-            echo "🧪 Testing GitHub SSH connection..."
-            ssh -T git@github.com -o ConnectTimeout=10 || {
-                EXIT_CODE=$?
-                if [ $EXIT_CODE -eq 1 ]; then
-                    echo "✅ SSH connection to GitHub successful"
-                else
-                    echo "❌ SSH connection to GitHub failed (exit code: $EXIT_CODE)"
-                fi
-            }
-        '''
-    }
-}
+
 
         stage('📱 WhatsApp Start Notification') {
             steps {
