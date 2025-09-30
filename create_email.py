@@ -7,51 +7,51 @@ def create_temp_email():
     """
     # API endpoint
     url = 'https://boomlify-temp-mail-api2.p.rapidapi.com/api/v1/emails/create?time=10min'
-    
+
     # Headers
     headers = {
         'Content-Type': 'application/json',
         'x-rapidapi-host': 'boomlify-temp-mail-api2.p.rapidapi.com',
         'x-rapidapi-key': 'c815bd8438mshaec3510f9c39d67p1b034bjsn3f4575728890'
     }
-    
+
     # Data payload
     data = {
         "key1": "value",
         "key2": "value"
     }
-    
+
     try:
         print("🔄 Creating temporary email...")
-        
+
         # Make the POST request
         response = requests.post(url, headers=headers, json=data, timeout=30)
-        
+
         print(f"📊 Response status: {response.status_code}")
-        
+
         # Check if request was successful (200 or 201 for creation)
         if response.status_code in [200, 201]:
             # Parse the JSON response
             result = response.json()
-            
+
             # Extract email ID and address from the response structure
             if 'success' in result and result['success'] and 'email' in result:
                 email_data = result['email']
                 email_id = email_data.get('id')
                 email_address = email_data.get('address')
                 expires_at = email_data.get('expires_at')
-                
+
                 print("✅ Temporary email created successfully!")
                 print(f"📧 Email Address: {email_address}")
                 print(f"🆔 Email ID: {email_id}")
                 print(f"⏰ Expires at: {expires_at}")
-                
+
                 # Save to text file
                 with open('email_info.txt', 'w') as f:
                     f.write(f"EMAIL_ID={email_id}\n")
                     f.write(f"EMAIL_ADDRESS={email_address}\n")
                     f.write(f"EXPIRES_AT={expires_at}\n")
-                
+
                 print("💾 Email information saved to 'email_info.txt'")
                 return email_id, email_address
             else:
@@ -63,7 +63,7 @@ def create_temp_email():
             print(f"❌ Error: HTTP {response.status_code}")
             print(f"📄 Response: {response.text}")
             return None, None
-            
+
     except requests.exceptions.Timeout:
         print("❌ Request timeout - server took too long to respond")
         return None, None
@@ -87,9 +87,9 @@ def create_temporary_email():
     Returns True if successful, False otherwise
     """
     print("🚀 Starting temporary email creation process...")
-    
+
     email_id, email_address = create_temp_email()
-    
+
     if email_id and email_address:
         print("🎉 Email creation process completed successfully!")
         return True
@@ -102,9 +102,9 @@ def main():
     print("🌟 EmbyIL Email Creator")
     print("=" * 50)
     print("🚀 Creating temporary email for EmbyIL registration...")
-    
+
     email_id, email_address = create_temp_email()
-    
+
     if email_id and email_address:
         print("\n" + "=" * 50)
         print("🎉 SUCCESS!")
