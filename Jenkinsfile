@@ -164,17 +164,17 @@ finally:
                 always {
                     // Archive signup info file
                     archiveArtifacts artifacts: 'signup_info.json', allowEmptyArchive: true
+
+                    sh '''
+    echo "⏳ Waiting ${SIGNUP_WAIT_TIME} seconds for email delivery..."
+    sleep 60
+    echo "✅ Wait period completed"
+'''
                 }
             }
         }
 
 
-// אחרי השלב השני, הוסף:
-sh '''
-    echo "⏳ Waiting ${SIGNUP_WAIT_TIME} seconds for email delivery..."
-    sleep 60
-    echo "✅ Wait period completed"
-'''
 
         
         stage('Step 3: Check Messages with Retry') {
