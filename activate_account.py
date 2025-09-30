@@ -172,7 +172,7 @@ class EmbyILAccountActivation:
                         message_data = json.load(f)
 
                     # Look for activation link in different possible fields
-                    text_fields = ['text', 'body', 'content', 'html']
+                    text_fields = ['text', 'body_text', 'content', 'body_html']
 
                     for field in text_fields:
                         if field in message_data:
