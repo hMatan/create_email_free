@@ -180,39 +180,39 @@ class EmbyILAccountActivation:
         return None, None
 
     def find_activation_link(self):
-    """
-    Find activation link from message details files - ONLY from current run
-    Returns activation link or None if not found
-    """
-    print("🔍 Looking for activation link in CURRENT message files...")
+        """
+        Find activation link from message details files - ONLY from current run
+        Returns activation link or None if not found
+        """
+        print("🔍 Looking for activation link in CURRENT message files...")
     
-    try:
-        import glob
-        import time
+        try:
+            import glob
+            import time
         
         # מחפש רק קבצים שנוצרו בדקות האחרונות (מהריצה הנוכחית)
-        current_time = time.time()
-        recent_threshold = 1800  # 30 דקות
+            current_time = time.time()
+            recent_threshold = 1800  # 30 דקות
         
-        message_files = glob.glob('message_details_*.json')
-        recent_files = []
+            message_files = glob.glob('message_details_*.json')
+            recent_files = []
         
-        for file_path in message_files:
-            try:
-                file_time = os.path.getmtime(file_path)
-                if (current_time - file_time) < recent_threshold:
-                    recent_files.append(file_path)
-                    print(f"📄 Found recent file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
-                else:
-                    print(f"⏰ Skipping old file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
-            except Exception as e:
-                print(f"❌ Error checking file time for {file_path}: {e}")
+            for file_path in message_files:
+                try:
+                    file_time = os.path.getmtime(file_path)
+                    if (current_time - file_time) < recent_threshold:
+                        recent_files.append(file_path)
+                        print(f"📄 Found recent file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
+                    else:
+                        print(f"⏰ Skipping old file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
+                except Exception as e:
+                    print(f"❌ Error checking file time for {file_path}: {e}")
         
-        if not recent_files:
-            print("❌ No recent message detail files found from current run")
-            return None
+            if not recent_files:
+                print("❌ No recent message detail files found from current run")
+                return None
         
-        print(f"📄 Processing {len(recent_files)} recent message files")
+            print(f"📄 Processing {len(recent_files)} recent message files")
         
         # [שאר הקוד זהה לפונקציה המקורית...]
 
