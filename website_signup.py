@@ -418,6 +418,56 @@ class EmbyILRegistration:
                 print(f"🔒 {self.browser_type} browser closed successfully")
             except Exception as e:
                 print(f"⚠️ Error closing browser: {e}")
+def register_account(self):
+    """
+    Main method to register an account - wrapper for the existing functionality
+    Returns True if successful, False otherwise
+    """
+    print("🚀 Starting account registration process...")
+    
+    try:
+        # Read email from file (created by previous step)
+        email = self.read_email_from_file()
+        if not email:
+            print("❌ Could not read email address from file")
+            return False
+        
+        # Generate random credentials with fixed password
+        first_name, last_name, password = self.generate_random_credentials(email)
+        
+        print(f"📧 Email: {email}")
+        print(f"👤 Name: {first_name} {last_name}")
+        print(f"🔐 Password: {password}")
+        print(f"🌐 Browser: {self.browser_type}")
+        
+        # Perform registration
+        success = self.fill_registration_form(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password=password,
+            password_confirm=password
+        )
+        
+        if success:
+            print("🎉 Account registration completed successfully!")
+            return True
+        else:
+            print("❌ Account registration failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Registration error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def cleanup(self):
+    """
+    Cleanup method for proper resource management
+    """
+    print("🧹 Cleaning up resources...")
+    self.close()
 
 def main():
     """Main function for Jenkins integration"""
