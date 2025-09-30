@@ -108,11 +108,6 @@ pipeline {
     }
 }
 
-                        ls -la || true
-                    '''
-                }
-            }
-        }
 
         stage('Step 1: Create Temporary Email') {
             steps {
