@@ -207,61 +207,6 @@ class EmbyILAccountActivation:
             print(f"❌ Error searching for activation link: {e}")
             return None
 
-    def activate_account(self):
-    """
-    Jenkins-compatible wrapper for account activation
-    Automatically reads all required info from files and performs activation
-    Returns True if successful, False otherwise
-    """
-    print("🔐 Starting automated account activation for Jenkins...")
-    
-    try:
-        # Step 1: Read email and website password
-        print("📖 Reading email and password from files...")
-        email, website_password = self.read_signup_email_and_website_password()
-        if not email or not website_password:
-            print("❌ Could not read email address or password")
-            return False
-        
-        # Step 2: Find activation link from message details
-        print("🔍 Looking for activation link...")
-        activation_link = self.find_activation_link()
-        if not activation_link:
-            print("❌ Could not find activation link")
-            print("💡 Make sure Step 4 (message processing) completed successfully")
-            return False
-        
-        print(f"📋 Activation Summary:")
-        print(f"   📧 Email: {email}")
-        print(f"   🔐 Website Password: {website_password}")
-        print(f"   🔗 Activation Link: {activation_link}")
-        print(f"   🌐 Browser: {self.browser_type}")
-        
-        # Step 3: Perform the actual activation using the renamed method
-        print("🚀 Starting activation process...")
-        success = self._perform_activation(activation_link, email, website_password)
-        
-        if success:
-            print("🎉 Account activation completed successfully!")
-            return True
-        else:
-            print("❌ Account activation failed")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Activation error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def cleanup(self):
-    """
-    Cleanup method for proper resource management
-    """
-    print("🧹 Cleaning up activation resources...")
-    self.close()
-
-
     def generate_username(self):
         """Generate username: 3 letters + 4 numbers + !"""
         letters = ''.join(random.choices(string.ascii_lowercase, k=3))
@@ -270,7 +215,7 @@ def cleanup(self):
         print(f"🎯 Generated username: {username}")
         return username
 
-def _perform_activation(self, activation_link, email, password):
+    def activate_account(self, activation_link, email, password):
         """Perform the full account activation process"""
         try:
             print(f"🌐 Opening activation link: {activation_link}")
