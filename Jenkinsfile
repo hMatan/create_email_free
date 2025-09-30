@@ -49,27 +49,65 @@ pipeline {
     }
 
     stages {
-        stage('Cleanup Workspace') {
-            steps {
-                script {
-                    echo "🧹 Cleaning up workspace..."
+       stage('Cleanup Workspace') {
+    steps {
+        script {
+            echo "🧹 Enhanced cleanup - removing ALL old files..."
+            
+            sh '''
+                echo "📂 Current workspace contents before cleanup:"
+                ls -la || true
+                echo ""
+                
+                echo "🗑️ Removing ALL old files comprehensively..."
+                
+                # קבצי אימייל והודעות
+                rm -f email_info.txt || true
+                rm -f message_ids.txt || true
+                rm -f message_details_*.json || true
+                
+                # קבצי הרשמה
+                rm -f signup_*.json || true
+                rm -f signup_info.json || true
+                
+                # קבצי הפעלה
+                rm -f activation_*.json || true
+                rm -f activation_info.json || true
+                
+                # קבצי תוצאות
+                rm -f user.password.txt || true
+                rm -f email_sent.json || true
+                rm -f username_counter.txt || true
+                
+                # קבצי לוגים ותיעוד
+                rm -f *.log || true
+                rm -f build_*_summary_*.txt || true
+                
+                # קבצי תמונות (צילומי מסך)
+                rm -f *.png || true
+                rm -f signup_*.png || true
+                rm -f activation_*.png || true
+                
+                # קבצים זמניים נוספים
+                rm -f temp_* || true
+                rm -f tmp_* || true
+                rm -f *.tmp || true
+                
+                # ניקוי Python cache
+                rm -rf __pycache__ || true
+                rm -f *.pyc || true
+                
+                echo ""
+                echo "✅ Enhanced cleanup completed"
+                echo "📂 Workspace contents after cleanup:"
+                ls -la || true
+                echo ""
+                echo "🔢 File count after cleanup: $(ls -1 | wc -l)"
+            '''
+        }
+    }
+}
 
-                    // Clean up all files from previous runs
-                    sh '''
-                        echo "📂 Current workspace contents:"
-                        ls -la || true
-
-                        echo "🗑️ Removing old files..."
-                        rm -f email_info.txt || true
-                        rm -f message_ids.txt || true
-                        rm -f signup_info.json || true
-                        rm -f activation_info.json || true
-                        rm -f user.password.txt || true
-                        rm -f email_sent.json || true
-                        rm -f message_details_*.json || true
-                        rm -f *.log || true
-
-                        echo "✅ Workspace cleaned"
                         ls -la || true
                     '''
                 }
