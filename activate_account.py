@@ -96,12 +96,44 @@ class EmbyILAccountActivation:
                 continue
         return None
 
-    def generate_username(self):
-        """Generate a random username"""
-        prefixes = ['user', 'player', 'viewer', 'guest', 'member']
-        prefix = random.choice(prefixes)
-        numbers = ''.join(random.choices(string.digits, k=4))
-        return f"{prefix}{numbers}"
+    def generate_sequential_username(self):
+        """
+        Generate sequential username from tomtom350 to tomtom600
+        Uses a counter file to track the next username
+        """
+        counter_file = 'username_counter.txt'
+
+        try:
+            # Read current counter
+            if os.path.exists(counter_file):
+                with open(counter_file, 'r') as f:
+                    current_num = int(f.read().strip())
+            else:
+                current_num = 350  # Start from tomtom350
+
+            # Generate username
+            username = f"tomtom{current_num}"
+
+            # Increment for next time (wrap around at 600)
+            next_num = current_num + 1
+            if next_num > 600:
+                next_num = 350  # Reset to start
+
+            # Save next counter
+            with open(counter_file, 'w') as f:
+                f.write(str(next_num))
+
+            print(f"🔢 Generated sequential username: {username} (next will be tomtom{next_num})")
+            return username
+
+        except Exception as e:
+            print(f"❌ Error generating sequential username: {e}")
+            # Fallback to random number if file operations fail
+            import random
+            fallback_num = random.randint(350, 600)
+            username = f"tomtom{fallback_num}"
+            print(f"🎲 Using fallback username: {username}")
+            return username
 
     def read_signup_email_and_website_password(self):
         """
@@ -172,7 +204,7 @@ class EmbyILAccountActivation:
                         message_data = json.load(f)
 
                     # Look for activation link in different possible fields
-                    text_fields = ['text', 'body_text', 'content', 'body_html']
+                    text_fields = ['body_text', 'body_html', 'text', 'body', 'content', 'html']
 
                     for field in text_fields:
                         if field in message_data:
@@ -180,6 +212,7 @@ class EmbyILAccountActivation:
 
                             # Look for activation links
                             link_patterns = [
+                                r'https?://[^\s]*confirmation-token[^\s]*',
                                 r'https?://[^\s]*activate[^\s]*',
                                 r'https?://[^\s]*activation[^\s]*',
                                 r'https?://[^\s]*confirm[^\s]*',
@@ -191,6 +224,8 @@ class EmbyILAccountActivation:
                                 matches = re.findall(pattern, str(content), re.IGNORECASE)
                                 if matches:
                                     activation_link = matches[0].strip()
+                                    # Clean up any trailing characters
+                                    activation_link = re.sub(r'[\]\s*$', '', activation_link)
                                     print(f"✅ Found activation link: {activation_link}")
                                     return activation_link
 
@@ -254,31 +289,64 @@ class EmbyILAccountActivation:
 
     def _perform_activation(self, activation_link, email, password):
         """
-        Perform the actual activation process
-        This is the main activation logic
+        Perform the actual activation process with the correct workflow
         """
         try:
             print(f"🌐 Opening activation link: {activation_link}")
             self.driver.get(activation_link)
             wait = WebDriverWait(self.driver, 20)
-            time.sleep(3)
+            time.sleep(5)  # Wait for page to load
 
-            # Take screenshot of activation page
-            self.driver.save_screenshot("activation_step1_page.png")
-            print("📸 Screenshot saved: activation_step1_page.png")
+            # Take screenshot of initial activation page
+            self.driver.save_screenshot("activation_step1_initial.png")
+            print("📸 Screenshot saved: activation_step1_initial.png")
 
-            # Step 1: Enter email and password (WEBSITE credentials)
-            print("📝 Step 1: Entering website email and password...")
+            # STEP 1: Click "חזרה להתחברות" button
+            print("🔘 Step 1: Looking for 'חזרה להתחברות' button...")
+
+            back_button = None
+            try:
+                # Use XPath to find element containing the Hebrew text
+                back_button = wait.until(EC.element_to_be_clickable(
+                    (By.XPATH, "//button[contains(text(), 'חזרה להתחברות')] | //a[contains(text(), 'חזרה להתחברות')]")
+                ))
+            except:
+                print("❌ Could not find 'חזרה להתחברות' button by text, trying other selectors...")
+                back_to_login_selectors = [
+                    'button[data-slot="button"]',
+                    '.cursor-pointer',
+                    'button.btn-primary',
+                    'button:first-of-type'
+                ]
+                back_button = self.find_element_by_selectors(back_to_login_selectors)
+
+            if back_button:
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", back_button)
+                time.sleep(2)
+                back_button.click()
+                print("✅ Clicked 'חזרה להתחברות' button")
+                time.sleep(5)  # Wait for login page to load
+            else:
+                print("❌ Could not find 'חזרה להתחברות' button")
+                return False
+
+            # Take screenshot of login page
+            self.driver.save_screenshot("activation_step2_login_page.png")
+            print("📸 Screenshot saved: activation_step2_login_page.png")
+
+            # STEP 2: Enter email and password for login
+            print("📝 Step 2: Entering email and password for login...")
             print(f"📧 Email: {email}")
-            print(f"🔐 Password: {password} (website signup password)")
+            print(f"🔐 Password: {password}")
 
-            # Find email field
+            # Find email field (first field)
             email_selectors = [
-                'input[name="email"]',
                 'input[type="email"]',
+                'input[name="email"]',
                 'input[placeholder*="email" i]',
-                'input[placeholder*="Email"]',
-                'input[id*="email"]'
+                'input[placeholder*="אימייל"]',
+                'input:first-of-type',
+                'form input:first-child'
             ]
 
             email_field = self.find_element_by_selectors(email_selectors)
@@ -290,14 +358,16 @@ class EmbyILAccountActivation:
                 print("✅ Email entered successfully")
             else:
                 print("❌ Email field not found")
+                return False
 
-            # Find password field
+            # Find password field (second field)  
             password_selectors = [
-                'input[name="password"]',
                 'input[type="password"]',
+                'input[name="password"]',
                 'input[placeholder*="password" i]',
-                'input[placeholder*="Password"]',
-                'input[id*="password"]'
+                'input[placeholder*="סיסמה"]',
+                'input:nth-of-type(2)',
+                'form input:nth-child(2)'
             ]
 
             password_field = self.find_element_by_selectors(password_selectors)
@@ -306,55 +376,66 @@ class EmbyILAccountActivation:
                 time.sleep(1)
                 password_field.clear()
                 password_field.send_keys(password)
-                print(f"✅ Website password entered: {password}")
+                print("✅ Password entered successfully")
             else:
                 print("❌ Password field not found")
-
-            # Take screenshot before submit
-            self.driver.save_screenshot("activation_step1_filled.png")
-            print("📸 Screenshot saved: activation_step1_filled.png")
-
-            # Find and click submit button
-            submit_selectors = [
-                'button[type="submit"]',
-                'input[type="submit"]',
-                'button:contains("Submit")',
-                'button:contains("Continue")',
-                'button:contains("Next")',
-                '.btn-submit',
-                '.btn-primary',
-                '.submit-button'
-            ]
-
-            submit_button = self.find_element_by_selectors(submit_selectors)
-            if submit_button:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
-                time.sleep(1)
-                submit_button.click()
-                print("✅ Step 1 submit clicked")
-                time.sleep(5) # Wait for page to load
-            else:
-                print("❌ Submit button not found for step 1")
                 return False
 
-            # Take screenshot of step 2 page
-            self.driver.save_screenshot("activation_step2_page.png")
-            print("📸 Screenshot saved: activation_step2_page.png")
+            # Take screenshot before clicking login
+            self.driver.save_screenshot("activation_step2_login_filled.png")
+            print("📸 Screenshot saved: activation_step2_login_filled.png")
 
-            # Step 2: Fill the form with username and new password
-            print("📝 Step 2: Entering username and new password...")
+            # STEP 3: Click "התחברות" (Login) button
+            print("🔘 Step 3: Looking for 'התחברות' button...")
 
-            # Generate username
-            username = self.generate_username()
+            login_button = None
+            try:
+                # Use XPath to find login button
+                login_button = wait.until(EC.element_to_be_clickable(
+                    (By.XPATH, "//button[contains(text(), 'התחברות')] | //input[@value='התחברות']")
+                ))
+            except:
+                print("❌ Could not find 'התחברות' button by text, trying generic selectors...")
+                login_selectors = [
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    'button.btn-primary',
+                    'button:last-of-type'
+                ]
+                login_button = self.find_element_by_selectors(login_selectors)
 
-            # Find username field
+            if login_button:
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", login_button)
+                time.sleep(2)
+                login_button.click()
+                print("✅ Clicked 'התחברות' button")
+                time.sleep(5)  # Wait for next page to load
+            else:
+                print("❌ Could not find 'התחברות' button")
+                return False
+
+            # Take screenshot of setup page
+            self.driver.save_screenshot("activation_step3_setup_page.png")
+            print("📸 Screenshot saved: activation_step3_setup_page.png")
+
+            # STEP 4: Enter username and new password
+            print("📝 Step 4: Setting up username and password...")
+
+            # Generate sequential username
+            username = self.generate_sequential_username()
+            new_password = "Aa123456!"
+
+            print(f"👤 Username: {username}")
+            print(f"🔐 New Password: {new_password}")
+
+            # Find username field (first field on setup page)
             username_selectors = [
                 'input[name="username"]',
                 'input[name="userName"]',
                 'input[placeholder*="username" i]',
-                'input[placeholder*="Username"]',
-                'input[id*="username"]',
-                'input[type="text"]:first-of-type'
+                'input[placeholder*="שם משתמש"]',
+                'input[type="text"]:first-of-type',
+                'form input:first-child'
             ]
 
             username_field = self.find_element_by_selectors(username_selectors)
@@ -366,14 +447,17 @@ class EmbyILAccountActivation:
                 print(f"✅ Username entered: {username}")
             else:
                 print("❌ Username field not found")
+                return False
 
-            # Find new password field
+            # Find new password field (second field on setup page)
             new_password_selectors = [
+                'input[type="password"]',
                 'input[name="password"]',
                 'input[name="newPassword"]',
-                'input[type="password"]:first-of-type',
                 'input[placeholder*="password" i]',
-                'input[id*="password"]'
+                'input[placeholder*="סיסמה"]',
+                'input:nth-of-type(2)',
+                'form input:nth-child(2)'
             ]
 
             new_password_field = self.find_element_by_selectors(new_password_selectors)
@@ -381,73 +465,73 @@ class EmbyILAccountActivation:
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", new_password_field)
                 time.sleep(1)
                 new_password_field.clear()
-                new_password_field.send_keys("rh1234")
-                print("✅ New password entered: rh1234")
+                new_password_field.send_keys(new_password)
+                print(f"✅ New password entered: {new_password}")
             else:
                 print("❌ New password field not found")
-
-            # Find password confirmation field
-            confirm_password_selectors = [
-                'input[name="confirmPassword"]',
-                'input[name="password_confirmation"]',
-                'input[name="confirm_password"]',
-                'input[type="password"]:nth-of-type(2)',
-                'input[placeholder*="confirm" i]',
-                'input[id*="confirm"]'
-            ]
-
-            confirm_password_field = self.find_element_by_selectors(confirm_password_selectors)
-            if confirm_password_field:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", confirm_password_field)
-                time.sleep(1)
-                confirm_password_field.clear()
-                confirm_password_field.send_keys("rh1234")
-                print("✅ Password confirmation entered: rh1234")
-            else:
-                print("❌ Password confirmation field not found")
+                return False
 
             # Take screenshot before final submit
-            self.driver.save_screenshot("activation_step2_filled.png")
-            print("📸 Screenshot saved: activation_step2_filled.png")
+            self.driver.save_screenshot("activation_step4_setup_filled.png")
+            print("📸 Screenshot saved: activation_step4_setup_filled.png")
 
-            # Find and click final submit button
-            final_submit_button = self.find_element_by_selectors(submit_selectors)
-            if final_submit_button:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", final_submit_button)
-                time.sleep(1)
-                final_submit_button.click()
-                print("✅ Final submit clicked")
-                time.sleep(8) # Wait for completion
+            # STEP 5: Click "אשר" (Confirm) button
+            print("🔘 Step 5: Looking for 'אשר' button...")
+
+            confirm_button = None
+            try:
+                # Use XPath to find confirm button
+                confirm_button = wait.until(EC.element_to_be_clickable(
+                    (By.XPATH, "//button[contains(text(), 'אשר')] | //input[@value='אשר']")
+                ))
+            except:
+                print("❌ Could not find 'אשר' button by text, trying generic selectors...")
+                confirm_selectors = [
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    'button.btn-primary',
+                    'button:last-of-type'
+                ]
+                confirm_button = self.find_element_by_selectors(confirm_selectors)
+
+            if confirm_button:
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", confirm_button)
+                time.sleep(2)
+                confirm_button.click()
+                print("✅ Clicked 'אשר' button")
+                time.sleep(8)  # Wait for completion
             else:
-                print("❌ Final submit button not found")
+                print("❌ Could not find 'אשר' button")
+                return False
 
             # Take final screenshot
-            self.driver.save_screenshot("activation_completed.png")
-            print("📸 Screenshot saved: activation_completed.png")
+            self.driver.save_screenshot("activation_step5_completed.png")
+            print("📸 Screenshot saved: activation_step5_completed.png")
 
             # Save activation details
             activation_info = {
                 'timestamp': datetime.datetime.now().isoformat(),
                 'activation_link': activation_link,
-                'email': email,
-                'website_signup_password': password,
+                'login_email': email,
+                'login_password': password,
                 'username': username,
-                'new_account_password': 'rh1234',
+                'account_password': new_password,
                 'browser_used': self.browser_type,
                 'success': True,
-                'note': 'Used website signup password for activation, then set new account password'
+                'workflow': 'Click חזרה להתחברות → Login → Setup username/password → Click אשר',
+                'note': f'Sequential username {username}, account password {new_password}'
             }
 
             # Save with timestamp
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"activation_{timestamp}.json"
-            with open(filename, 'w') as f:
-                json.dump(activation_info, f, indent=2)
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(activation_info, f, indent=2, ensure_ascii=False)
             print(f"💾 Activation info saved to: {filename}")
 
             # Also save as activation_info.json for Jenkins
-            with open('activation_info.json', 'w') as f:
-                json.dump(activation_info, f, indent=2)
+            with open('activation_info.json', 'w', encoding='utf-8') as f:
+                json.dump(activation_info, f, indent=2, ensure_ascii=False)
             print("💾 Also saved as: activation_info.json")
 
             # Create user.password.txt with final credentials
@@ -456,20 +540,21 @@ class EmbyILAccountActivation:
 Created: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Email: {email}
 Username: {username}
-Password: rh1234
+Password: {new_password}
 Login URL: https://client.embyiltv.io/login
 Account Status: Activated
+Workflow: Confirmation → Login → Setup → Confirmed
 """
 
-            with open('user.password.txt', 'w') as f:
+            with open('user.password.txt', 'w', encoding='utf-8') as f:
                 f.write(user_password_content)
             print("💾 Final credentials saved to: user.password.txt")
 
             print("🎉 Account activation completed successfully!")
             print(f"📋 Final credentials:")
-            print(f"   📧 Email: {email}")
+            print(f"   📧 Login Email: {email}")
             print(f"   👤 Username: {username}")
-            print(f"   🔐 New Password: rh1234")
+            print(f"   🔐 Account Password: {new_password}")
             print(f"   🌐 Browser Used: {self.browser_type}")
             print("📄 All details saved to user.password.txt")
 
@@ -477,6 +562,8 @@ Account Status: Activated
 
         except Exception as e:
             print(f"❌ Error during activation: {str(e)}")
+            import traceback
+            traceback.print_exc()
             if self.driver:
                 self.driver.save_screenshot("activation_error.png")
                 print("📸 Error screenshot saved: activation_error.png")
