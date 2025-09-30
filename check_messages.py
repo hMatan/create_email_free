@@ -87,13 +87,13 @@ def save_message_id(message_id, message_info):
     except Exception as e:
         print(f"❌ Error saving message ID: {e}")
 
-def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
+def get_email_messages_with_retry(email_id, max_retries=15, retry_delay=45):
     """
     Get messages with retry mechanism for better reliability
     Args:
         email_id (str): The email ID from the text file
-        max_retries (int): Maximum number of retry attempts (default: 10)
-        retry_delay (int): Delay between retries in seconds (default: 30)
+        max_retries (int): Maximum number of retry attempts (default: 15)
+        retry_delay (int): Delay between retries in seconds (default: 45)
     Returns:
         list: List of new messages if successful, None if all retries failed
     """
@@ -113,9 +113,13 @@ def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
         'x-rapidapi-key': 'c815bd8438mshaec3510f9c39d67p1b034bjsn3f4575728890'
     }
 
+    print(f"🔄 Starting enhanced message checking with {max_retries} retries...")
+    print(f"⏰ Retry delay: {retry_delay} seconds")
+    print(f"📬 Already processed: {len(processed_ids)} messages")
+
     for attempt in range(1, max_retries + 1):
         try:
-            print(f"🔄 Checking for new messages (attempt {attempt}/{max_retries})...")
+            print(f"\n🔍 Checking for messages (attempt {attempt}/{max_retries})...")
 
             # Make the GET request
             response = requests.get(url, headers=headers, timeout=30)
@@ -135,7 +139,6 @@ def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
                 elif isinstance(result, list):
                     messages = result
 
-                print(f"✅ Messages check completed!")
                 print(f"📬 Total messages found: {len(messages)}")
 
                 # Filter new messages
@@ -149,31 +152,39 @@ def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
 
                 # If we found new messages, return them immediately
                 if new_messages:
-                    print("\n📧 New Messages Found!")
+                    print("\n🎉 NEW MESSAGES FOUND!")
+                    print("=" * 60)
+
                     for i, message in enumerate(new_messages, 1):
                         message_id = message.get('id', 'N/A')
-                        print(f"\n{'='*50}")
-                        print(f"📨 New Message {i}")
-                        print(f"{'='*50}")
-                        print(f"🆔 Message ID: {message_id}")
-                        print(f"📤 From: {message.get('from', message.get('sender', 'N/A'))}")
-                        print(f"📧 To: {message.get('to', 'N/A')}")
-                        print(f"📋 Subject: {message.get('subject', 'No Subject')}")
-                        print(f"📅 Date: {message.get('date', message.get('created_at', 'N/A'))}")
+                        sender = message.get('from', message.get('sender', 'N/A'))
+                        subject = message.get('subject', 'No Subject')
+                        date = message.get('date', message.get('created_at', 'N/A'))
 
-                        # Show content if available
+                        print(f"\n📨 Message {i}/{len(new_messages)}")
+                        print("-" * 40)
+                        print(f"🆔 ID: {message_id}")
+                        print(f"📤 From: {sender}")
+                        print(f"📋 Subject: {subject}")
+                        print(f"📅 Date: {date}")
+
+                        # Show content preview
                         content = message.get('text', message.get('body', message.get('content', '')))
                         if content:
-                            print(f"📄 Content Preview:")
-                            print(f"{content[:200]}{'...' if len(content) > 200 else ''}")
+                            preview = content.replace('\n', ' ').strip()
+                            if len(preview) > 100:
+                                preview = preview[:100] + "..."
+                            print(f"📄 Preview: {preview}")
 
                         # Save message ID to file
                         if message_id != 'N/A':
                             save_message_id(message_id, message)
 
+                    print("=" * 60)
+                    print(f"✅ Successfully found {len(new_messages)} new messages!")
                     return new_messages
 
-                # If no new messages but we have processed messages, check if we should continue
+                # If no new messages but we have processed messages, continue retrying
                 elif len(messages) > 0:
                     print("📭 No new messages (all messages already processed)")
                     if attempt < max_retries:
@@ -192,22 +203,60 @@ def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print("⏰ Maximum retries reached - no messages received")
-                        print("💡 This might indicate:")
+                        print("\n⏰ MAXIMUM RETRIES REACHED")
+                        print("=" * 50)
+                        print("❌ No messages received after all attempts")
+                        print("\n💡 Possible reasons:")
                         print("  • Email verification was not sent")
-                        print("  • Email was sent to a different address")
-                        print("  • There's a delay in email delivery")
+                        print("  • Email was sent to a different address")  
+                        print("  • Delay in email delivery system")
+                        print("  • Email service provider filtering")
+                        print("\n🔧 Suggestions:")
+                        print("  • Check if registration was successful")
+                        print("  • Verify the email address is correct")
+                        print("  • Try creating a new temporary email")
                         return None
 
+            elif response.status_code == 404:
+                print("❌ Email ID not found - email may have expired")
+                return None
+            elif response.status_code == 429:
+                print("⚠️ Rate limit exceeded - waiting longer...")
+                if attempt < max_retries:
+                    print(f"⏳ Extended wait: {retry_delay * 2} seconds...")
+                    time.sleep(retry_delay * 2)
+                    continue
+                else:
+                    return None
             else:
                 print(f"❌ Error: HTTP {response.status_code}")
-                print(f"Response: {response.text[:200]}...")
+                print(f"📄 Response: {response.text[:200]}...")
                 if attempt < max_retries:
                     print(f"⏳ Waiting {retry_delay} seconds before retry...")
                     time.sleep(retry_delay)
                     continue
                 else:
                     return None
+
+        except requests.exceptions.Timeout:
+            print(f"⏰ Request timeout (attempt {attempt})")
+            if attempt < max_retries:
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                print("❌ All requests timed out")
+                return None
+
+        except requests.exceptions.ConnectionError:
+            print(f"🌐 Connection error (attempt {attempt})")
+            if attempt < max_retries:
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                print("❌ All connection attempts failed")
+                return None
 
         except requests.exceptions.RequestException as e:
             print(f"❌ Request failed (attempt {attempt}): {e}")
@@ -237,29 +286,41 @@ def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
                 return None
 
     # If we get here, all retries failed
-    print("💀 All retry attempts failed")
+    print("💀 All retry attempts exhausted")
     return None
 
 def get_email_messages(email_id, limit=25, offset=0):
     """
-    Wrapper function for backward compatibility
+    Original function for backward compatibility
     """
+    print("📞 Using compatibility mode - calling enhanced version...")
     return get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30)
 
 def main():
     """Main function for standalone execution"""
+    print("🌟 Enhanced EmbyIL Message Checker")
+    print("=" * 60)
     print("🚀 Starting improved message checker with retry mechanism...")
 
     email_id, email_address = read_email_info()
     if email_id and email_address:
-        print(f'📧 Checking messages for: {email_address}')
+        print(f'\n📧 Checking messages for: {email_address}')
+        print(f'🔧 Using enhanced retry mechanism')
+
         messages = get_email_messages_with_retry(email_id)
+
         if messages:
+            print(f'\n🎉 SUCCESS!')
             print(f'✅ Found {len(messages)} new messages')
+            print("📋 Messages have been saved to message_ids.txt")
+        elif messages == []:
+            print(f'\n📭 No new messages found (but some messages exist)')
         else:
-            print('📭 No new messages found after all retries')
+            print('\n❌ No messages found after all retries')
+            print('💡 Check if the registration process completed successfully')
     else:
         print('❌ Could not read email information')
+        print('💡 Make sure create_email.py ran successfully first')
         exit(1)
 
 if __name__ == "__main__":
