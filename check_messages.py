@@ -1,15 +1,15 @@
 import requests
 import json
 import os
+import time
+import datetime
 
 def read_email_info():
     """
     Read email information from the text file created by create_email.py
-
     Returns:
         tuple: (email_id, email_address) if successful, (None, None) if failed
     """
-
     if not os.path.exists('email_info.txt'):
         print("❌ Error: 'email_info.txt' file not found!")
         print("💡 Please run 'create_email.py' first to create a temporary email")
@@ -36,7 +36,6 @@ def read_email_info():
             print(f"🆔 Email ID: {email_id}")
             if expires_at:
                 print(f"⏰ Expires at: {expires_at}")
-
             return email_id, email_address
         else:
             print("❌ Error: Invalid email information in file")
@@ -49,12 +48,10 @@ def read_email_info():
 def read_processed_messages():
     """
     Read already processed message IDs from file
-
     Returns:
         set: Set of processed message IDs
     """
     processed_ids = set()
-
     if os.path.exists('message_ids.txt'):
         try:
             with open('message_ids.txt', 'r') as f:
@@ -71,7 +68,6 @@ def read_processed_messages():
 def save_message_id(message_id, message_info):
     """
     Save message ID and basic info to text file
-
     Args:
         message_id (str): The message ID
         message_info (dict): Message information dictionary
@@ -83,7 +79,7 @@ def save_message_id(message_id, message_info):
             f.write(f"FROM={message_info.get('from', 'N/A')}\n")
             f.write(f"SUBJECT={message_info.get('subject', 'No Subject')}\n")
             f.write(f"DATE={message_info.get('date', message_info.get('created_at', 'N/A'))}\n")
-            f.write(f"PROCESSED_AT={json.dumps({'timestamp': __import__('datetime').datetime.now().isoformat()})}\n")
+            f.write(f"PROCESSED_AT={json.dumps({'timestamp': datetime.datetime.now().isoformat()})}\n")
             f.write("---\n")  # Separator between messages
 
         print(f"💾 Message ID saved to message_ids.txt: {message_id}")
@@ -91,19 +87,16 @@ def save_message_id(message_id, message_info):
     except Exception as e:
         print(f"❌ Error saving message ID: {e}")
 
-def get_email_messages(email_id, limit=25, offset=0):
+def get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30):
     """
-    Get messages for a temporary email using the Boomlify API and save new message IDs
-
+    Get messages with retry mechanism for better reliability
     Args:
         email_id (str): The email ID from the text file
-        limit (int): Maximum number of messages to retrieve (default: 25)
-        offset (int): Number of messages to skip (default: 0)
-
+        max_retries (int): Maximum number of retry attempts (default: 10)
+        retry_delay (int): Delay between retries in seconds (default: 30)
     Returns:
-        list: List of new messages if successful, None if failed
+        list: List of new messages if successful, None if all retries failed
     """
-
     if not email_id:
         print("❌ Error: No email ID provided")
         return None
@@ -112,7 +105,7 @@ def get_email_messages(email_id, limit=25, offset=0):
     processed_ids = read_processed_messages()
 
     # API endpoint with email_id
-    url = f'https://boomlify-temp-mail-api2.p.rapidapi.com/api/v1/emails/{email_id}/messages?limit={limit}&offset={offset}'
+    url = f'https://boomlify-temp-mail-api2.p.rapidapi.com/api/v1/emails/{email_id}/messages?limit=25&offset=0'
 
     # Headers
     headers = {
@@ -120,174 +113,154 @@ def get_email_messages(email_id, limit=25, offset=0):
         'x-rapidapi-key': 'c815bd8438mshaec3510f9c39d67p1b034bjsn3f4575728890'
     }
 
-    try:
-        print("🔄 Checking for new messages...")
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"🔄 Checking for new messages (attempt {attempt}/{max_retries})...")
 
-        # Make the GET request
-        response = requests.get(url, headers=headers)
+            # Make the GET request
+            response = requests.get(url, headers=headers, timeout=30)
 
-        # Check if request was successful
-        if response.status_code == 200:
-            # Parse the JSON response
-            result = response.json()
+            # Debug information
+            print(f"📊 Response status: {response.status_code}")
 
-            # Handle both possible response structures
-            messages = []
-            if isinstance(result, dict):
-                messages = result.get('messages', result.get('data', []))
-            elif isinstance(result, list):
-                messages = result
+            # Check if request was successful
+            if response.status_code == 200:
+                # Parse the JSON response
+                result = response.json()
 
-            print(f"✅ Messages check completed!")
-            print(f"📬 Total messages found: {len(messages)}")
+                # Handle both possible response structures
+                messages = []
+                if isinstance(result, dict):
+                    messages = result.get('messages', result.get('data', []))
+                elif isinstance(result, list):
+                    messages = result
 
-            # Filter new messages
-            new_messages = []
-            for message in messages:
-                message_id = message.get('id')
-                if message_id and message_id not in processed_ids:
-                    new_messages.append(message)
+                print(f"✅ Messages check completed!")
+                print(f"📬 Total messages found: {len(messages)}")
 
-            print(f"🆕 New messages: {len(new_messages)}")
+                # Filter new messages
+                new_messages = []
+                for message in messages:
+                    message_id = message.get('id')
+                    if message_id and message_id not in processed_ids:
+                        new_messages.append(message)
 
-            # Display and save new messages
-            if new_messages:
-                print("\n📧 New Messages:")
-                for i, message in enumerate(new_messages, 1):
-                    message_id = message.get('id', 'N/A')
+                print(f"🆕 New messages: {len(new_messages)}")
 
-                    print(f"\n{'='*50}")
-                    print(f"📨 New Message {i}")
-                    print(f"{'='*50}")
-                    print(f"🆔 Message ID: {message_id}")
-                    print(f"📤 From: {message.get('from', message.get('sender', 'N/A'))}")
-                    print(f"📧 To: {message.get('to', 'N/A')}")
-                    print(f"📋 Subject: {message.get('subject', 'No Subject')}")
-                    print(f"📅 Date: {message.get('date', message.get('created_at', 'N/A'))}")
+                # If we found new messages, return them immediately
+                if new_messages:
+                    print("\n📧 New Messages Found!")
+                    for i, message in enumerate(new_messages, 1):
+                        message_id = message.get('id', 'N/A')
+                        print(f"\n{'='*50}")
+                        print(f"📨 New Message {i}")
+                        print(f"{'='*50}")
+                        print(f"🆔 Message ID: {message_id}")
+                        print(f"📤 From: {message.get('from', message.get('sender', 'N/A'))}")
+                        print(f"📧 To: {message.get('to', 'N/A')}")
+                        print(f"📋 Subject: {message.get('subject', 'No Subject')}")
+                        print(f"📅 Date: {message.get('date', message.get('created_at', 'N/A'))}")
 
-                    # Show content if available
-                    content = message.get('text', message.get('body', message.get('content', '')))
-                    if content:
-                        print(f"📄 Content:")
-                        print(f"{content}")
+                        # Show content if available
+                        content = message.get('text', message.get('body', message.get('content', '')))
+                        if content:
+                            print(f"📄 Content Preview:")
+                            print(f"{content[:200]}{'...' if len(content) > 200 else ''}")
 
-                    # Show HTML content info if available
-                    html_content = message.get('html', message.get('html_body', ''))
-                    if html_content:
-                        print(f"🌐 HTML Content: Available ({len(html_content)} characters)")
+                        # Save message ID to file
+                        if message_id != 'N/A':
+                            save_message_id(message_id, message)
 
-                    # Show attachments if any
-                    attachments = message.get('attachments', [])
-                    if attachments:
-                        print(f"📎 Attachments: {len(attachments)} file(s)")
+                    return new_messages
 
-                    # Save message ID to file
-                    if message_id != 'N/A':
-                        save_message_id(message_id, message)
+                # If no new messages but we have processed messages, check if we should continue
+                elif len(messages) > 0:
+                    print("📭 No new messages (all messages already processed)")
+                    if attempt < max_retries:
+                        print(f"⏳ Waiting {retry_delay} seconds before next attempt...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        print("⏰ Maximum retries reached with no new messages")
+                        return []
 
-            elif len(messages) > 0:
-                print("📭 No new messages (all messages already processed)")
-                print(f"💡 Processed message IDs are stored in message_ids.txt")
+                # If no messages at all, continue retrying
+                else:
+                    print("📭 No messages found in mailbox")
+                    if attempt < max_retries:
+                        print(f"⏳ Waiting {retry_delay} seconds before retry {attempt + 1}...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        print("⏰ Maximum retries reached - no messages received")
+                        print("💡 This might indicate:")
+                        print("  • Email verification was not sent")
+                        print("  • Email was sent to a different address")
+                        print("  • There's a delay in email delivery")
+                        return None
+
             else:
-                print("📭 No messages found")
-                print("💡 Tip: Send an email to your temporary address and run this script again")
+                print(f"❌ Error: HTTP {response.status_code}")
+                print(f"Response: {response.text[:200]}...")
+                if attempt < max_retries:
+                    print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    return None
 
-            return new_messages
-
-        else:
-            print(f"❌ Error: HTTP {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Request failed: {e}")
-        return None
-    except json.JSONDecodeError as e:
-        print(f"❌ Failed to parse JSON response: {e}")
-        return None
-
-def show_message_ids_summary():
-    """
-    Show summary of all processed message IDs
-    """
-    if not os.path.exists('message_ids.txt'):
-        print("📄 No message_ids.txt file found - no messages processed yet")
-        return
-
-    try:
-        message_count = 0
-        with open('message_ids.txt', 'r') as f:
-            content = f.read()
-            message_count = content.count('MESSAGE_ID=')
-
-        print(f"\n📊 Message IDs Summary:")
-        print(f"📄 File: message_ids.txt")
-        print(f"📈 Total processed messages: {message_count}")
-
-        # Show last few message IDs
-        message_ids = []
-        with open('message_ids.txt', 'r') as f:
-            for line in f:
-                if line.startswith('MESSAGE_ID='):
-                    message_id = line.split('=', 1)[1].strip()
-                    message_ids.append(message_id)
-
-        if message_ids:
-            print(f"\n🆔 Recent Message IDs:")
-            for i, msg_id in enumerate(message_ids[-5:], 1):  # Show last 5
-                print(f"  {i}. {msg_id}")
-
-            if len(message_ids) > 5:
-                print(f"  ... and {len(message_ids) - 5} more")
-
-    except Exception as e:
-        print(f"❌ Error reading message summary: {e}")
-
-def check_messages_continuously():
-    """
-    Continuously check for messages with user input
-    """
-    email_id, email_address = read_email_info()
-
-    if not email_id:
-        return
-
-    print(f"\n🔄 Monitoring messages for: {email_address}")
-    print("\n🎯 Options:")
-    print("  1. Check once and exit")
-    print("  2. Check continuously (press Enter to check again, 'q' to quit)")
-    print("  3. Show message IDs summary")
-
-    choice = input("\nChoose option (1, 2, or 3): ").strip()
-
-    if choice == "1":
-        get_email_messages(email_id)
-        show_message_ids_summary()
-    elif choice == "2":
-        print("\n🔄 Continuous monitoring started...")
-        print("💡 Press Enter to check for new messages, type 'q' and Enter to quit, 's' for summary")
-
-        while True:
-            user_input = input("\nPress Enter to check messages ('q' to quit, 's' for summary): ").strip().lower()
-
-            if user_input == 'q':
-                print("👋 Goodbye!")
-                break
-            elif user_input == 's':
-                show_message_ids_summary()
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Request failed (attempt {attempt}): {e}")
+            if attempt < max_retries:
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                time.sleep(retry_delay)
+                continue
             else:
-                get_email_messages(email_id)
-    elif choice == "3":
-        show_message_ids_summary()
-    else:
-        print("❌ Invalid choice, checking once...")
-        get_email_messages(email_id)
-        show_message_ids_summary()
+                return None
+
+        except json.JSONDecodeError as e:
+            print(f"❌ Failed to parse JSON response (attempt {attempt}): {e}")
+            if attempt < max_retries:
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                return None
+
+        except Exception as e:
+            print(f"❌ Unexpected error (attempt {attempt}): {e}")
+            if attempt < max_retries:
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                return None
+
+    # If we get here, all retries failed
+    print("💀 All retry attempts failed")
+    return None
+
+def get_email_messages(email_id, limit=25, offset=0):
+    """
+    Wrapper function for backward compatibility
+    """
+    return get_email_messages_with_retry(email_id, max_retries=10, retry_delay=30)
 
 def main():
-    """Main function"""
-    print("🚀 Starting message checker with ID tracking...")
-    check_messages_continuously()
+    """Main function for standalone execution"""
+    print("🚀 Starting improved message checker with retry mechanism...")
+
+    email_id, email_address = read_email_info()
+    if email_id and email_address:
+        print(f'📧 Checking messages for: {email_address}')
+        messages = get_email_messages_with_retry(email_id)
+        if messages:
+            print(f'✅ Found {len(messages)} new messages')
+        else:
+            print('📭 No new messages found after all retries')
+    else:
+        print('❌ Could not read email information')
+        exit(1)
 
 if __name__ == "__main__":
     main()
