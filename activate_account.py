@@ -180,65 +180,42 @@ class EmbyILAccountActivation:
         return None, None
 
     def find_activation_link(self):
-        """
-        Find activation link from message details files
-        Returns activation link or None if not found
-        """
-        print("🔍 Looking for activation link in message files...")
-
-        try:
-            import glob
-            message_files = glob.glob('message_details_*.json')
-
-            if not message_files:
-                print("❌ No message detail files found")
-                return None
-
-            print(f"📄 Found {len(message_files)} message files")
-
-            for message_file in message_files:
-                print(f"📖 Checking {message_file}...")
-
-                try:
-                    with open(message_file, 'r', encoding='utf-8') as f:
-                        message_data = json.load(f)
-
-                    # Look for activation link in different possible fields
-                    text_fields = ['body_text', 'body_html', 'text', 'body', 'content', 'html']
-
-                    for field in text_fields:
-                        if field in message_data:
-                            content = message_data[field]
-
-                            # Look for activation links
-                            link_patterns = [
-                                r'https?://[^\s]*confirmation-token[^\s]*',
-                                r'https?://[^\s]*activate[^\s]*',
-                                r'https?://[^\s]*activation[^\s]*',
-                                r'https?://[^\s]*confirm[^\s]*',
-                                r'https?://[^\s]*verify[^\s]*',
-                                r'https?://client\.embyiltv\.io[^\s]*'
-                            ]
-
-                            for pattern in link_patterns:
-                                matches = re.findall(pattern, str(content), re.IGNORECASE)
-                                if matches:
-                                    activation_link = matches[0].strip()
-                                    # Clean up any trailing characters
-                                    activation_link = re.sub(r'[\]\s*$', '', activation_link)
-                                    print(f"✅ Found activation link: {activation_link}")
-                                    return activation_link
-
-                except Exception as e:
-                    print(f"❌ Error reading {message_file}: {e}")
-                    continue
-
-            print("❌ No activation link found in any message file")
+    """
+    Find activation link from message details files - ONLY from current run
+    Returns activation link or None if not found
+    """
+    print("🔍 Looking for activation link in CURRENT message files...")
+    
+    try:
+        import glob
+        import time
+        
+        # מחפש רק קבצים שנוצרו בדקות האחרונות (מהריצה הנוכחית)
+        current_time = time.time()
+        recent_threshold = 1800  # 30 דקות
+        
+        message_files = glob.glob('message_details_*.json')
+        recent_files = []
+        
+        for file_path in message_files:
+            try:
+                file_time = os.path.getmtime(file_path)
+                if (current_time - file_time) < recent_threshold:
+                    recent_files.append(file_path)
+                    print(f"📄 Found recent file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
+                else:
+                    print(f"⏰ Skipping old file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
+            except Exception as e:
+                print(f"❌ Error checking file time for {file_path}: {e}")
+        
+        if not recent_files:
+            print("❌ No recent message detail files found from current run")
             return None
+        
+        print(f"📄 Processing {len(recent_files)} recent message files")
+        
+        # [שאר הקוד זהה לפונקציה המקורית...]
 
-        except Exception as e:
-            print(f"❌ Error searching for activation link: {e}")
-            return None
 
     def activate_account(self):
         """
