@@ -216,44 +216,88 @@ class EmbyILAccountActivation:
         print(f"❌ All click methods failed for {description}")
         return False
 
-    def generate_sequential_username(self):
+    def check_for_username_error(self):
+        """Check if there's a username error on the page"""
+        try:
+            # Wait a moment for any error messages to appear
+            time.sleep(2)
+
+            error_selectors = [
+                '[class*="error"]',
+                '[class*="invalid"]',
+                '.text-red-500',
+                '.text-danger',
+                '[role="alert"]',
+                '.alert-danger',
+                '.text-red-600',
+                '[class*="text-red"]',
+                '.invalid-feedback',
+                '.error-message'
+            ]
+
+            for selector in error_selectors:
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                for element in elements:
+                    if element.is_displayed():
+                        error_text = element.text.strip()
+                        if error_text and ('משתמש' in error_text or 'קיים' in error_text or 
+                                         'exists' in error_text.lower() or 'already' in error_text.lower() or
+                                         'taken' in error_text.lower() or 'בשימוש' in error_text):
+                            print(f"⚠️ Username error detected: {error_text}")
+                            return True
+
+            # Also check page source for Hebrew error messages
+            page_source = self.driver.page_source
+            if 'שם משתמש כבר בשימוש' in page_source or 'השם משתמש כבר קיים' in page_source:
+                print("⚠️ Username conflict detected in page source")
+                return True
+
+            return False
+        except Exception as e:
+            print(f"❌ Error checking for username error: {e}")
+            return False
+
+    def generate_sequential_username_with_retry(self):
         """
-        Generate sequential username from tomtom350 to tomtom600
-        Uses a counter file to track the next username
+        Generate sequential username with conflict detection and retry
         """
         counter_file = 'username_counter.txt'
+        max_attempts = 50  # Try up to 50 usernames
 
-        try:
-            # Read current counter
-            if os.path.exists(counter_file):
-                with open(counter_file, 'r') as f:
-                    current_num = int(f.read().strip())
-            else:
-                current_num = 350  # Start from tomtom350
+        for attempt in range(max_attempts):
+            try:
+                # Read current counter
+                if os.path.exists(counter_file):
+                    with open(counter_file, 'r') as f:
+                        current_num = int(f.read().strip())
+                else:
+                    current_num = 350
 
-            # Generate username
-            username = f"tomtom{current_num}"
+                # Generate username
+                username = f"tomtom{current_num}"
 
-            # Increment for next time (wrap around at 600)
-            next_num = current_num + 1
-            if next_num > 600:
-                next_num = 350  # Reset to start
+                # Increment for next time
+                next_num = current_num + 1
+                if next_num > 600:
+                    next_num = 350
 
-            # Save next counter
-            with open(counter_file, 'w') as f:
-                f.write(str(next_num))
+                # Save next counter
+                with open(counter_file, 'w') as f:
+                    f.write(str(next_num))
 
-            print(f"🔢 Generated sequential username: {username} (next will be tomtom{next_num})")
-            return username
+                print(f"🔢 Attempt {attempt + 1}: Generated username: {username} (next will be tomtom{next_num})")
+                return username
 
-        except Exception as e:
-            print(f"❌ Error generating sequential username: {e}")
-            # Fallback to random number if file operations fail
-            import random
-            fallback_num = random.randint(350, 600)
-            username = f"tomtom{fallback_num}"
-            print(f"🎲 Using fallback username: {username}")
-            return username
+            except Exception as e:
+                print(f"❌ Error generating username: {e}")
+                continue
+
+        # If we've tried all usernames, use random
+        import random
+        fallback_num = random.randint(700, 999)  # Different range to avoid conflicts
+        username = f"tomtom{fallback_num}"
+        print(f"🎲 Using fallback username: {username}")
+        return username
 
     def read_signup_email_and_website_password(self):
         """
@@ -558,123 +602,147 @@ class EmbyILAccountActivation:
             self.driver.save_screenshot("activation_step3_setup_page.png")
             print("📸 Screenshot saved: activation_step3_setup_page.png")
 
-            # STEP 4: Enter username and new password
-            print("📝 Step 4: Setting up username and password...")
+            # STEP 4: Enter username and new password with retry mechanism
+            print("📝 Step 4: Setting up username and password with retry mechanism...")
 
-            # Generate sequential username
-            username = self.generate_sequential_username()
             new_password = "Aa123456!"
-
-            print(f"👤 Username: {username}")
             print(f"🔐 New Password: {new_password}")
 
-            # Find username field (first field on setup page)
-            username_selectors = [
-                'input[name="username"]',
-                'input[name="userName"]',
-                'input[placeholder*="username" i]',
-                'input[placeholder*="שם משתמש"]',
-                'input[type="text"]:first-of-type',
-                'form input:first-child'
-            ]
+            # Username retry loop
+            max_username_attempts = 10
+            for username_attempt in range(max_username_attempts):
+                print(f"🔄 Username attempt {username_attempt + 1}/{max_username_attempts}")
 
-            username_field = self.find_element_by_selectors(username_selectors)
-            if username_field:
+                # Generate username
+                username = self.generate_sequential_username_with_retry()
+                print(f"👤 Trying Username: {username}")
+
+                # Find username field (first field on setup page)
+                username_selectors = [
+                    'input[name="username"]',
+                    'input[name="userName"]',
+                    'input[placeholder*="username" i]',
+                    'input[placeholder*="שם משתמש"]',
+                    'input[type="text"]:first-of-type',
+                    'form input:first-child'
+                ]
+
+                username_field = self.find_element_by_selectors(username_selectors)
+                if not username_field:
+                    print("❌ Username field not found")
+                    return False
+
+                # Clear and enter username
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", username_field)
                 time.sleep(1)
                 username_field.clear()
                 username_field.send_keys(username)
                 print(f"✅ Username entered: {username}")
-            else:
-                print("❌ Username field not found")
-                return False
 
-            # Find new password field (second field on setup page)
-            new_password_selectors = [
-                'input[type="password"]',
-                'input[name="password"]',
-                'input[name="newPassword"]',
-                'input[placeholder*="password" i]',
-                'input[placeholder*="סיסמה"]',
-                'input:nth-of-type(2)',
-                'form input:nth-child(2)'
-            ]
-
-            new_password_field = self.find_element_by_selectors(new_password_selectors)
-            if new_password_field:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", new_password_field)
-                time.sleep(1)
-                new_password_field.clear()
-                new_password_field.send_keys(new_password)
-                print(f"✅ New password entered: {new_password}")
-            else:
-                print("❌ New password field not found")
-                return False
-
-# Find password confirmation field (third field on setup page)
-            password_confirm_selectors = [
-                'input[type="password"]:nth-of-type(2)',  # Second password field
-                'input[name="passwordConfirm"]',
-                'input[name="confirmPassword"]', 
-                'input[name="password_confirmation"]',
-                'input[placeholder*="confirm" i]',
-                'input[placeholder*="אישור" i]',
-                'input[placeholder*="חזור" i]',
-                'input:nth-of-type(3)',  # Third field overall
-                'form input:nth-child(3)'  # Third input in form
-]
-
-            password_confirm_field = self.find_element_by_selectors(password_confirm_selectors)
-            if password_confirm_field:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", password_confirm_field)
-                time.sleep(1)
-                password_confirm_field.clear()
-                password_confirm_field.send_keys(new_password)  # Same password
-                print(f"✅ Password confirmation entered: {new_password}")
-            else:
-                print("⚠️ Password confirmation field not found (might not be required)")
-    # Don't return False here - it might be optional
-
-            # Take screenshot before final submit
-            self.driver.save_screenshot("activation_step4_setup_filled.png")
-            print("📸 Screenshot saved: activation_step4_setup_filled.png")
-
-            # STEP 5: Click "אשר" (Confirm) button with advanced handling
-            print("🔘 Step 5: Looking for 'אשר' button...")
-
-            # Wait a bit more for any animations to complete
-            time.sleep(3)
-
-            confirm_button = None
-            try:
-                # Use XPath to find confirm button
-                confirm_button = wait.until(EC.element_to_be_clickable(
-                    (By.XPATH, "//button[contains(text(), 'אשר')] | //input[@value='אשר']")
-                ))
-            except:
-                print("❌ Could not find 'אשר' button by text, trying generic selectors...")
-                confirm_selectors = [
-                    'button[type="submit"]',
-                    'input[type="submit"]',
-                    'button.btn-primary',
-                    'button:last-of-type',
-                    'form button:last-child',
-                    'button:contains("אשר")',
-                    '[value="אשר"]'
+                # Find new password field (second field on setup page)
+                new_password_selectors = [
+                    'input[type="password"]',
+                    'input[name="password"]',
+                    'input[name="newPassword"]',
+                    'input[placeholder*="password" i]',
+                    'input[placeholder*="סיסמה"]',
+                    'input:nth-of-type(2)',
+                    'form input:nth-child(2)'
                 ]
-                confirm_button = self.find_element_by_selectors(confirm_selectors)
 
-            if confirm_button:
+                new_password_field = self.find_element_by_selectors(new_password_selectors)
+                if new_password_field:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", new_password_field)
+                    time.sleep(1)
+                    new_password_field.clear()
+                    new_password_field.send_keys(new_password)
+                    print(f"✅ New password entered: {new_password}")
+                else:
+                    print("❌ New password field not found")
+                    return False
+
+                # Find password confirmation field (third field on setup page)
+                password_confirm_selectors = [
+                    'input[type="password"]:nth-of-type(2)',  # Second password field
+                    'input[name="passwordConfirm"]',
+                    'input[name="confirmPassword"]', 
+                    'input[name="password_confirmation"]',
+                    'input[placeholder*="confirm" i]',
+                    'input[placeholder*="אישור" i]',
+                    'input[placeholder*="חזור" i]',
+                    'input:nth-of-type(3)',  # Third field overall
+                    'form input:nth-child(3)'  # Third input in form
+                ]
+
+                password_confirm_field = self.find_element_by_selectors(password_confirm_selectors)
+                if password_confirm_field:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", password_confirm_field)
+                    time.sleep(1)
+                    password_confirm_field.clear()
+                    password_confirm_field.send_keys(new_password)  # Same password
+                    print(f"✅ Password confirmation entered: {new_password}")
+                else:
+                    print("⚠️ Password confirmation field not found (might not be required)")
+
+                # Take screenshot before submit attempt
+                self.driver.save_screenshot(f"activation_step4_setup_filled_attempt_{username_attempt + 1}.png")
+                print(f"📸 Screenshot saved: activation_step4_setup_filled_attempt_{username_attempt + 1}.png")
+
+                # STEP 5: Click "אשר" (Confirm) button with advanced handling
+                print(f"🔘 Step 5: Looking for 'אשר' button (attempt {username_attempt + 1})...")
+
+                # Wait a bit more for any animations to complete
+                time.sleep(3)
+
+                confirm_button = None
+                try:
+                    # Use XPath to find confirm button
+                    confirm_button = wait.until(EC.element_to_be_clickable(
+                        (By.XPATH, "//button[contains(text(), 'אשר')] | //input[@value='אשר']")
+                    ))
+                except:
+                    print("❌ Could not find 'אשר' button by text, trying generic selectors...")
+                    confirm_selectors = [
+                        'button[type="submit"]',
+                        'input[type="submit"]',
+                        'button.btn-primary',
+                        'button:last-of-type',
+                        'form button:last-child',
+                        'button:contains("אשר")',
+                        '[value="אשר"]'
+                    ]
+                    confirm_button = self.find_element_by_selectors(confirm_selectors)
+
+                if not confirm_button:
+                    print("❌ Could not find 'אשר' button")
+                    return False
+
                 print("🎯 Found confirm button, attempting advanced click...")
                 if self.click_element_advanced(confirm_button, "'אשר' button"):
                     print("✅ Clicked 'אשר' button")
-                    time.sleep(8)  # Wait for completion
+                    time.sleep(5)  # Wait for response
+
+                    # Check for username error
+                    if self.check_for_username_error():
+                        print(f"⚠️ Username '{username}' is already taken, trying next username...")
+                        # Take error screenshot
+                        self.driver.save_screenshot(f"activation_username_error_attempt_{username_attempt + 1}.png")
+                        print(f"📸 Error screenshot saved: activation_username_error_attempt_{username_attempt + 1}.png")
+                        continue  # Try next username
+                    else:
+                        print(f"🎉 Username '{username}' accepted! Account creation successful!")
+                        break  # Success! Exit the retry loop
                 else:
                     print("❌ Could not click 'אשר' button even with advanced methods")
                     return False
+
             else:
-                print("❌ Could not find 'אשר' button")
+                # This runs if the for loop completes without breaking (all attempts failed)
+                print(f"❌ Failed to create account after {max_username_attempts} username attempts")
                 return False
+
+            # Wait for final processing
+            time.sleep(5)
 
             # Take final screenshot
             self.driver.save_screenshot("activation_step5_completed.png")
@@ -691,7 +759,7 @@ class EmbyILAccountActivation:
                 'browser_used': self.browser_type,
                 'success': True,
                 'workflow': 'Click חזרה להתחברות → Login → Setup username/password → Click אשר',
-                'note': f'Sequential username {username}, account password {new_password}'
+                'note': f'Sequential username {username} after retry mechanism, account password {new_password}'
             }
 
             # Save with timestamp
@@ -716,6 +784,7 @@ Password: {new_password}
 Login URL: https://client.embyiltv.io/login
 Account Status: Activated
 Workflow: Confirmation → Login → Setup → Confirmed
+Username Retry: Used retry mechanism to find available username
 """
 
             with open('user.password.txt', 'w', encoding='utf-8') as f:
