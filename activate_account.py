@@ -179,84 +179,86 @@ class EmbyILAccountActivation:
         print("❌ Could not find signup email and password")
         return None, None
 
-    def find_activation_link(self):
+        def find_activation_link(self):
         """
-        Find activation link from message details files - ONLY from current run
+        Find activation link from message details files - Simple version
         Returns activation link or None if not found
         """
-        print("🔍 Looking for activation link in CURRENT message files...")
-
+        print("🔍 Looking for activation link in message files...")
+        
         try:
             import glob
             import time
-
-            # מחפש רק קבצים שנוצרו בדקות האחרונות (מהריצה הנוכחית)
+            
+            # Find recent message files (last 30 minutes)
             current_time = time.time()
-            recent_threshold = 1800  # 30 דקות
-
+            recent_threshold = 1800  # 30 minutes
+            
             message_files = glob.glob('message_details_*.json')
             recent_files = []
-
+            
             for file_path in message_files:
                 try:
                     file_time = os.path.getmtime(file_path)
                     if (current_time - file_time) < recent_threshold:
                         recent_files.append(file_path)
-                        print(f"📄 Found recent file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
+                        print(f"📄 Found recent file: {file_path}")
                     else:
-                        print(f"⏰ Skipping old file: {file_path} (age: {int((current_time - file_time)/60)} minutes)")
+                        print(f"⏰ Skipping old file: {file_path}")
                 except Exception as e:
                     print(f"❌ Error checking file time for {file_path}: {e}")
-
+            
             if not recent_files:
-                print("❌ No recent message detail files found from current run")
+                print("❌ No recent message detail files found")
                 return None
-
+            
             print(f"📄 Processing {len(recent_files)} recent message files")
-
+            
+            # Check each recent file
             for message_file in recent_files:
-                print(f"📖 Checking recent file: {message_file}...")
-
+                print(f"📖 Checking file: {message_file}...")
+                
                 try:
                     with open(message_file, 'r', encoding='utf-8') as f:
                         message_data = json.load(f)
-
-                    # Look for activation link in different possible fields
-                    text_fields = ['body_text', 'body_html', 'text', 'body', 'content', 'html']
-
-                    for field in text_fields:
+                    
+                    # Look in different fields
+                    fields_to_check = ['body_text', 'body_html', 'text', 'body', 'content', 'html']
+                    
+                    for field in fields_to_check:
                         if field in message_data:
-                            content = message_data[field]
-
-                            # Look for activation links
-                            link_patterns = [
-                                r'https?://[^\s]*confirmation-token[^\s]*',
-                                r'https?://[^\s]*activate[^\s]*',
-                                r'https?://[^\s]*activation[^\s]*', 
-                                r'https?://[^\s]*confirm[^\s]*',
-                                r'https?://[^\s]*verify[^\s]*',
-                                r'https?://client\.embyiltv\.io[^\s]*'
-                            ]
-
-                            for pattern in link_patterns:
-                                matches = re.findall(pattern, str(content), re.IGNORECASE)
-                                if matches:
-                                    activation_link = matches[0].strip()
-                                    # Clean up any trailing characters
-                                    activation_link = re.sub(r'[\]\s*$', '', activation_link)
-                                    print(f"✅ Found activation link in recent file: {activation_link}")
+                            content = str(message_data[field])
+                            
+                            # Simple string search - no complex regex
+                            if 'confirmation-token' in content:
+                                # Extract the URL manually
+                                start_pos = content.find('https://client.embyiltv.io/confirmation-token/')
+                                if start_pos != -1:
+                                    # Find the end of the URL (space, newline, or bracket)
+                                    end_chars = [' ', '\n', '\r', ']', ')', '}', '"', "'", '<']
+                                    end_pos = len(content)
+                                    
+                                    for char in end_chars:
+                                        char_pos = content.find(char, start_pos)
+                                        if char_pos != -1 and char_pos < end_pos:
+                                            end_pos = char_pos
+                                    
+                                    activation_link = content[start_pos:end_pos].strip()
+                                    print(f"✅ Found activation link: {activation_link}")
                                     return activation_link
-
+                    
                 except Exception as e:
                     print(f"❌ Error reading {message_file}: {e}")
                     continue
-
-            print("❌ No activation link found in any recent message file")
+            
+            print("❌ No activation link found in any message file")
             return None
-
+            
         except Exception as e:
             print(f"❌ Error searching for activation link: {e}")
             return None
+
+
 
     def activate_account(self):
         """
