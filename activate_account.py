@@ -611,6 +611,30 @@ class EmbyILAccountActivation:
                 print("❌ New password field not found")
                 return False
 
+# Find password confirmation field (third field on setup page)
+            password_confirm_selectors = [
+                'input[type="password"]:nth-of-type(2)',  # Second password field
+                'input[name="passwordConfirm"]',
+                'input[name="confirmPassword"]', 
+                'input[name="password_confirmation"]',
+                'input[placeholder*="confirm" i]',
+                'input[placeholder*="אישור" i]',
+                'input[placeholder*="חזור" i]',
+                'input:nth-of-type(3)',  # Third field overall
+                'form input:nth-child(3)'  # Third input in form
+]
+
+            password_confirm_field = self.find_element_by_selectors(password_confirm_selectors)
+            if password_confirm_field:
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", password_confirm_field)
+                time.sleep(1)
+                password_confirm_field.clear()
+                password_confirm_field.send_keys(new_password)  # Same password
+                print(f"✅ Password confirmation entered: {new_password}")
+            else:
+                print("⚠️ Password confirmation field not found (might not be required)")
+    # Don't return False here - it might be optional
+
             # Take screenshot before final submit
             self.driver.save_screenshot("activation_step4_setup_filled.png")
             print("📸 Screenshot saved: activation_step4_setup_filled.png")
