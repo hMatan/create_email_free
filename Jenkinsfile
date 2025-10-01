@@ -104,7 +104,7 @@ pipeline {
                 sh '''
                     echo "📤 Contacting WhatsApp service..."
 
-                    curl -X POST http://localhost:3000/webhook/jenkins \
+                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "start",
@@ -173,7 +173,7 @@ else:
                 sh '''
                     EMAIL_ADDRESS=$(grep "EMAIL_ADDRESS=" email_info.txt | cut -d'=' -f2 | tr -d '\r')
 
-                    curl -X POST http://localhost:3000/webhook/jenkins \
+                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "progress",
@@ -250,7 +250,7 @@ finally:
                     echo "📱 Sending WhatsApp account registered notification..."
                 }
                 sh '''
-                    curl -X POST http://localhost:3000/webhook/jenkins \
+                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "progress",
@@ -354,7 +354,7 @@ else:
                 sh '''
                     MESSAGE_COUNT=$(grep -c "MESSAGE_ID=" message_ids.txt || echo "0")
 
-                    curl -X POST http://localhost:3000/webhook/jenkins \
+                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "progress",
@@ -521,7 +521,7 @@ else:
                     EMAIL=$(grep "Email:" user.password.txt | cut -d':' -f2 | xargs)
                     USERNAME=$(grep "Username:" user.password.txt | cut -d':' -f2 | xargs)
 
-                    curl -X POST http://localhost:3000/webhook/jenkins \
+                    curl -X POST http://192.16.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "success",
@@ -649,7 +649,7 @@ except Exception as e:
                     FAILED_STEP="Step 5: Account Activation"
                 fi
 
-                curl -X POST http://localhost:3000/webhook/jenkins \
+                curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                   -H "Content-Type: application/json" \
                   -d '{
                     "type": "failure",
