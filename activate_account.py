@@ -232,7 +232,7 @@ class EmbyILAccountActivation:
                             link_patterns = [
                                 r'https?://[^\s]*confirmation-token[^\s]*',
                                 r'https?://[^\s]*activate[^\s]*',
-                                r'https?://[^\s]*activation[^\s]*',
+                                r'https?://[^\s]*activation[^\s]*', 
                                 r'https?://[^\s]*confirm[^\s]*',
                                 r'https?://[^\s]*verify[^\s]*',
                                 r'https?://client\.embyiltv\.io[^\s]*'
