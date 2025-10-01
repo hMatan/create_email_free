@@ -521,7 +521,7 @@ else:
                     EMAIL=$(grep "Email:" user.password.txt | cut -d':' -f2 | xargs)
                     USERNAME=$(grep "Username:" user.password.txt | cut -d':' -f2 | xargs)
 
-                    curl -X POST http://192.16.1.50:3000/webhook/jenkins \
+                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
                       -H "Content-Type: application/json" \
                       -d '{
                         "type": "success",
