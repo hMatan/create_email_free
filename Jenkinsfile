@@ -109,6 +109,34 @@ pipeline {
 }
 
 
+        stage('📱 WhatsApp Start Notification') {
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp start notification..."
+                }
+                
+                sh '''
+                    echo "📤 Contacting WhatsApp service..."
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "start",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'",
+                        "message": "🚀 Starting EmbyIL Account Creation Process",
+                        "details": "Build #'$BUILD_NUMBER' started"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp start notification failed"
+                      
+                    echo "✅ WhatsApp start notification sent"
+                '''
+            }
+        }
         stage('Step 1: Create Temporary Email') {
             steps {
                 script {
@@ -152,7 +180,37 @@ else:
                 }
             }
         }
-
+        stage('📱 WhatsApp Email Created Notification') {
+            when {
+                expression { return fileExists('email_info.txt') }
+            }
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp email created notification..."
+                }
+                
+                sh '''
+                    EMAIL_ADDRESS=$(grep "EMAIL_ADDRESS=" email_info.txt | cut -d'=' -f2 | tr -d '\r')
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "progress",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'",
+                        "message": "📧 Temporary Email Created Successfully",
+                        "details": "Email: '$EMAIL_ADDRESS'",
+                        "stage": "Step 1: Email Creation"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp email notification failed"
+                '''
+            }
+        }
+        
         stage('Step 2: Website Signup') {
             steps {
                 script {
@@ -301,7 +359,36 @@ else:
                 }
             }
         }
-
+        
+        stage('📱 WhatsApp Account Registered Notification') {
+            when {
+                expression { return fileExists('signup_info.json') }
+            }
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp account registered notification..."
+                }
+                
+                sh '''
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "progress",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'",
+                        "message": "🌐 Website Registration Completed",
+                        "details": "Account registered successfully on EmbyIL",
+                        "stage": "Step 2: Website Signup"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp signup notification failed"
+                '''
+            }
+        }
+        
         stage('Step 4: Get Message Details') {
             when {
                 expression { fileExists('message_ids.txt') }
@@ -408,7 +495,37 @@ finally:
                 }
             }
         }
-
+        stage('📱 WhatsApp Verification Email Received') {
+            when {
+                expression { return fileExists('message_ids.txt') }
+            }
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp verification email notification..."
+                }
+                
+                sh '''
+                    MESSAGE_COUNT=$(grep -c "MESSAGE_ID=" message_ids.txt || echo "0")
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "progress",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'",
+                        "message": "📬 Verification Email Received",
+                        "details": "Found '$MESSAGE_COUNT' verification messages",
+                        "stage": "Step 3: Email Verification"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp verification notification failed"
+                '''
+            }
+        }
+        
         stage('Step 6: Send Results') {
             when {
                 expression { fileExists('user.password.txt') }
@@ -495,7 +612,43 @@ else:
 
             // Archive all artifacts
             archiveArtifacts artifacts: '*.txt,*.json,*.png', allowEmptyArchive: true
-
+        stage('📱 WhatsApp Success Notification') {
+            when {
+                expression { return fileExists('user.password.txt') }
+            }
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp success notification..."
+                }
+                
+                sh '''
+                    # Extract credentials from user.password.txt
+                    EMAIL=$(grep "Email:" user.password.txt | cut -d':' -f2 | xargs)
+                    USERNAME=$(grep "Username:" user.password.txt | cut -d':' -f2 | xargs)
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "success",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'",
+                        "message": "🎉 EmbyIL Account Created Successfully!",
+                        "details": "Email: '$EMAIL', Username: '$USERNAME'",
+                        "stage": "Complete",
+                        "credentials": {
+                          "email": "'$EMAIL'",
+                          "username": "'$USERNAME'",
+                          "loginUrl": "https://client.embyiltv.io/login"
+                        }
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp success notification failed"
+                '''
+            }
+        }
             // Clean up sensitive files but keep logs
             sh '''
                 echo "🧹 Cleaning up sensitive files..."
@@ -572,3 +725,44 @@ except Exception as e:
         }
     }
 }
+        stage('📱 WhatsApp Failure Notification') {
+            when {
+                expression { return currentBuild.result == 'FAILURE' }
+            }
+            steps {
+                script {
+                    echo "📱 Sending WhatsApp failure notification..."
+                }
+                
+                sh '''
+                    # Determine which step failed
+                    FAILED_STEP="Unknown"
+                    if [ ! -f "email_info.txt" ]; then
+                        FAILED_STEP="Step 1: Email Creation"
+                    elif [ ! -f "signup_info.json" ]; then
+                        FAILED_STEP="Step 2: Website Signup"
+                    elif [ ! -f "message_ids.txt" ]; then
+                        FAILED_STEP="Step 3: Email Verification"
+                    elif [ ! -f "user.password.txt" ]; then
+                        FAILED_STEP="Step 5: Account Activation"
+                    fi
+                    
+                    curl -X POST http://localhost:3000/webhook/jenkins \
+                      -H "Content-Type: application/json" \
+                      -d '{
+                        "type": "failure",
+                        "buildNumber": "'$BUILD_NUMBER'",
+                        "timestamp": "'$(date -Iseconds)'",
+                        "message": "❌ EmbyIL Account Creation Failed",
+                        "details": "Failed at: '$FAILED_STEP'",
+                        "stage": "Failed",
+                        "retryInfo": "Will retry in 3 days"
+                      }' \
+                      --connect-timeout 10 \
+                      --max-time 30 \
+                      --silent \
+                      --show-error \
+                      || echo "⚠️ WhatsApp failure notification failed"
+                '''
+            }
+        }
