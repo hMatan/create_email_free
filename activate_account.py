@@ -6,6 +6,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.common.action_chains import ActionChains
 import time
 import os
 import json
@@ -95,6 +96,125 @@ class EmbyILAccountActivation:
             except Exception:
                 continue
         return None
+
+    def close_any_overlays(self):
+        """Close any modal overlays or popups that might be blocking clicks"""
+        print("🔍 Checking for overlays/modals to close...")
+
+        # Common overlay/modal close selectors
+        close_selectors = [
+            # Close buttons
+            '[data-testid="close"]',
+            '[aria-label="Close"]',
+            '.close',
+            '.modal-close',
+            '.overlay-close',
+            'button[aria-label="Close"]',
+            'button.close',
+
+            # X buttons
+            'button:contains("×")',
+            'button:contains("✕")',
+            '[data-dismiss="modal"]',
+
+            # Overlay backgrounds (clicking outside modal)
+            '.modal-backdrop',
+            '.overlay-backdrop',
+            '.modal-overlay',
+            '[data-state="open"]',
+
+            # ESC key alternative - click outside
+            'body'
+        ]
+
+        for selector in close_selectors:
+            try:
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                for element in elements:
+                    if element.is_displayed():
+                        try:
+                            element.click()
+                            print(f"✅ Closed overlay using selector: {selector}")
+                            time.sleep(1)
+                            return True
+                        except:
+                            continue
+            except:
+                continue
+
+        # Try pressing Escape key
+        try:
+            from selenium.webdriver.common.keys import Keys
+            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+            print("✅ Sent ESC key to close overlay")
+            time.sleep(1)
+            return True
+        except:
+            pass
+
+        print("ℹ️ No overlays found to close")
+        return False
+
+    def click_element_advanced(self, element, description="element"):
+        """Advanced click method that handles overlays and various click issues"""
+        print(f"🎯 Attempting advanced click on {description}...")
+
+        methods = [
+            # Method 1: Regular click
+            lambda: element.click(),
+
+            # Method 2: Close overlays first then click
+            lambda: (self.close_any_overlays(), time.sleep(1), element.click()),
+
+            # Method 3: JavaScript click
+            lambda: self.driver.execute_script("arguments[0].click();", element),
+
+            # Method 4: ActionChains click
+            lambda: ActionChains(self.driver).move_to_element(element).click().perform(),
+
+            # Method 5: Force click with JavaScript after removing overlays
+            lambda: (
+                self.driver.execute_script("""
+                    // Remove overlays
+                    var overlays = document.querySelectorAll('[class*="overlay"], [class*="modal"], [style*="z-index"], [class*="backdrop"]');
+                    overlays.forEach(function(overlay) {
+                        if (overlay.style.zIndex > 100 || overlay.classList.contains('fixed')) {
+                            overlay.remove();
+                        }
+                    });
+                    // Click the element
+                    arguments[0].click();
+                """, element)
+            ),
+
+            # Method 6: Scroll into view and click
+            lambda: (
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element),
+                time.sleep(1),
+                element.click()
+            ),
+
+            # Method 7: Move to element and force click
+            lambda: (
+                ActionChains(self.driver).move_to_element(element).perform(),
+                time.sleep(1),
+                self.driver.execute_script("arguments[0].click();", element)
+            )
+        ]
+
+        for i, method in enumerate(methods, 1):
+            try:
+                print(f"🔄 Trying click method {i} for {description}...")
+                method()
+                print(f"✅ Successfully clicked {description} using method {i}")
+                return True
+            except Exception as e:
+                print(f"❌ Method {i} failed: {str(e)[:100]}...")
+                time.sleep(2)
+                continue
+
+        print(f"❌ All click methods failed for {description}")
+        return False
 
     def generate_sequential_username(self):
         """
@@ -339,11 +459,12 @@ class EmbyILAccountActivation:
                 back_button = self.find_element_by_selectors(back_to_login_selectors)
 
             if back_button:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", back_button)
-                time.sleep(2)
-                back_button.click()
-                print("✅ Clicked 'חזרה להתחברות' button")
-                time.sleep(5)  # Wait for login page to load
+                if self.click_element_advanced(back_button, "'חזרה להתחברות' button"):
+                    print("✅ Clicked 'חזרה להתחברות' button")
+                    time.sleep(5)  # Wait for login page to load
+                else:
+                    print("❌ Could not click 'חזרה להתחברות' button")
+                    return False
             else:
                 print("❌ Could not find 'חזרה להתחברות' button")
                 return False
@@ -423,11 +544,12 @@ class EmbyILAccountActivation:
                 login_button = self.find_element_by_selectors(login_selectors)
 
             if login_button:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", login_button)
-                time.sleep(2)
-                login_button.click()
-                print("✅ Clicked 'התחברות' button")
-                time.sleep(5)  # Wait for next page to load
+                if self.click_element_advanced(login_button, "'התחברות' button"):
+                    print("✅ Clicked 'התחברות' button")
+                    time.sleep(5)  # Wait for next page to load
+                else:
+                    print("❌ Could not click 'התחברות' button")
+                    return False
             else:
                 print("❌ Could not find 'התחברות' button")
                 return False
@@ -493,8 +615,11 @@ class EmbyILAccountActivation:
             self.driver.save_screenshot("activation_step4_setup_filled.png")
             print("📸 Screenshot saved: activation_step4_setup_filled.png")
 
-            # STEP 5: Click "אשר" (Confirm) button
+            # STEP 5: Click "אשר" (Confirm) button with advanced handling
             print("🔘 Step 5: Looking for 'אשר' button...")
+
+            # Wait a bit more for any animations to complete
+            time.sleep(3)
 
             confirm_button = None
             try:
@@ -508,16 +633,21 @@ class EmbyILAccountActivation:
                     'button[type="submit"]',
                     'input[type="submit"]',
                     'button.btn-primary',
-                    'button:last-of-type'
+                    'button:last-of-type',
+                    'form button:last-child',
+                    'button:contains("אשר")',
+                    '[value="אשר"]'
                 ]
                 confirm_button = self.find_element_by_selectors(confirm_selectors)
 
             if confirm_button:
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", confirm_button)
-                time.sleep(2)
-                confirm_button.click()
-                print("✅ Clicked 'אשר' button")
-                time.sleep(8)  # Wait for completion
+                print("🎯 Found confirm button, attempting advanced click...")
+                if self.click_element_advanced(confirm_button, "'אשר' button"):
+                    print("✅ Clicked 'אשר' button")
+                    time.sleep(8)  # Wait for completion
+                else:
+                    print("❌ Could not click 'אשר' button even with advanced methods")
+                    return False
             else:
                 print("❌ Could not find 'אשר' button")
                 return False
