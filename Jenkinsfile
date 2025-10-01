@@ -47,7 +47,6 @@ pipeline {
                     echo "📂 Current workspace contents before cleanup:"
                     ls -la || true
                     echo ""
-
                     echo "🗑️ Removing ALL old files comprehensively..."
 
                     # קבצי אימייל והודעות
@@ -463,6 +462,47 @@ finally:
             }
         }
 
+        stage('📱 WhatsApp Success Notification - Immediate') {
+            steps {
+                script {
+                    echo "📱 Sending immediate WhatsApp success notification..."
+                }
+                sh '''
+                    if [ -f "user.password.txt" ]; then
+                        EMAIL=$(grep "Email:" user.password.txt | cut -d':' -f2 | xargs)
+                        USERNAME=$(grep "Username:" user.password.txt | cut -d':' -f2 | xargs)
+
+                        echo "📧 Found credentials: Email=$EMAIL, Username=$USERNAME"
+
+                        curl -X POST http://192.168.1.50:3000/webhook/jenkins \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "type": "success",
+                            "buildNumber": "'$BUILD_NUMBER'",
+                            "timestamp": "'$(date -Iseconds)'",
+                            "message": "🎉 EmbyIL Account Created Successfully!",
+                            "details": "Email: '$EMAIL', Username: '$USERNAME', Password: Aa123456!",
+                            "stage": "Complete",
+                            "credentials": {
+                              "email": "'$EMAIL'",
+                              "username": "'$USERNAME'",
+                              "password": "Aa123456!",
+                              "loginUrl": "https://client.embyiltv.io/login"
+                            }
+                          }' \
+                          --connect-timeout 10 \
+                          --max-time 30 \
+                          --silent \
+                          --show-error \
+                          && echo "✅ WhatsApp success notification sent" \
+                          || echo "⚠️ WhatsApp success notification failed"
+                    else
+                        echo "❌ user.password.txt not found"
+                    fi
+                '''
+            }
+        }
+
         stage('Step 6: Send Results') {
             when {
                 expression { fileExists('user.password.txt') }
@@ -506,42 +546,6 @@ else:
                 always {
                     archiveArtifacts artifacts: 'email_sent.json', allowEmptyArchive: true
                 }
-            }
-        }
-
-        stage('📱 WhatsApp Success Notification') {
-            when {
-                expression { return fileExists('user.password.txt') }
-            }
-            steps {
-                script {
-                    echo "📱 Sending WhatsApp success notification..."
-                }
-                sh '''
-                    EMAIL=$(grep "Email:" user.password.txt | cut -d':' -f2 | xargs)
-                    USERNAME=$(grep "Username:" user.password.txt | cut -d':' -f2 | xargs)
-
-                    curl -X POST http://192.168.1.50:3000/webhook/jenkins \
-                      -H "Content-Type: application/json" \
-                      -d '{
-                        "type": "success",
-                        "buildNumber": "'$BUILD_NUMBER'",
-                        "timestamp": "'$(date -Iseconds)'",
-                        "message": "🎉 EmbyIL Account Created Successfully!",
-                        "details": "Email: '$EMAIL', Username: '$USERNAME'",
-                        "stage": "Complete",
-                        "credentials": {
-                          "email": "'$EMAIL'",
-                          "username": "'$USERNAME'",
-                          "loginUrl": "https://client.embyiltv.io/login"
-                        }
-                      }' \
-                      --connect-timeout 10 \
-                      --max-time 30 \
-                      --silent \
-                      --show-error \
-                      || echo "⚠️ WhatsApp success notification failed"
-                '''
             }
         }
     }
